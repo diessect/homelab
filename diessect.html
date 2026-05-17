@@ -1,0 +1,2867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>homelab • diessect</title>
+<!-- Favicon — sombra.png (PNG that modern browsers display) + sombra.ico (legacy fallback for browsers' auto /favicon.ico request). Both files live in this same diessect/ folder, served by nginx alongside the HTML. -->
+<link rel="icon" type="image/png" href="sombra.png">
+<link rel="icon" type="image/x-icon" href="sombra.ico">
+<style>
+:root {
+  /* OLED palette — true #000 background (no light leak on OLED panels, deepest
+     possible contrast), off-white text, restrained but distinct accents so
+     the topology connector classes (cl-phys / cl-net / cl-dns / cl-data /
+     cl-mgmt / cl-dep) stay color-differentiated against pure black. */
+  --bg:       #000000;   /* true black — defining OLED feature */
+  --bg2:      #0a0a0a;   /* card / panel backgrounds — barely lifted from black */
+  --bg3:      #161616;   /* hover / active layers */
+  --border:   #2a2a2a;   /* dim gray outlines */
+  --text:     #e5e5e5;   /* off-white — easier on the eyes than pure #fff */
+  --muted:    #707070;   /* medium gray for secondary text */
+  --blue:     #4d9eff;   /* network routing — clear blue */
+  --green:    #5dd674;   /* DNS — clean green */
+  --yellow:   #f5c842;   /* auto-deploy — warm amber */
+  --purple:   #b58aff;   /* physical / Mini PC — muted lavender (no longer dominant) */
+  --red:      #ff5a6c;   /* alerts — coral red */
+  --orange:   #ff8a5c;   /* automation — orange */
+  --teal:     #4dd6c2;   /* data / API — teal */
+  /* CLI-style monospace kept from the previous theme — both --font and --mono
+     point at the same stack so prose, UI labels, code spans, and tables all
+     read terminal. */
+  --font: 'SF Mono','JetBrains Mono','Cascadia Code','Fira Code',Consolas,monospace;
+  --mono: 'SF Mono','JetBrains Mono','Cascadia Code','Fira Code',Consolas,monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* ── HEADER ───────────────────────────────────────────────── */
+header {
+  border-bottom: 1px solid #4a4a4a;  /* brighter than var(--border) — clearer divider above the tab strip */
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.header-logo {
+  width: 34px; height: 34px;
+  background: linear-gradient(135deg, #1f4788, #3f51b5);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+header h1 {
+  font-size: 17px; font-weight: 700; letter-spacing: 0;
+  color: var(--purple);  /* purple branded title on true black */
+}
+/* Minimal CLI flourish: a blinking caret after the title — purple to match
+   the title, no glow so it stays clean against OLED black. */
+header h1::after {
+  content: '_';
+  color: var(--purple);
+  margin-left: 4px;
+  animation: cli-caret 1.1s steps(1) infinite;
+}
+@keyframes cli-caret { 50% { opacity: 0; } }
+header p  { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-left: 4px; }
+.header-status {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted);
+}
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: blink 3s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ── NAV ──────────────────────────────────────────────────── */
+nav {
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+}
+.tab-btn {
+  background: none; border: none;
+  color: #c0c0c0;  /* brighter than var(--muted) — readable inactive state */
+  cursor: pointer;
+  font-size: 13px; font-family: var(--font); font-weight: 500;
+  padding: 11px 16px;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+  display: flex; align-items: center; gap: 6px;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--text); border-bottom-color: var(--purple); }  /* active underline in purple to match the homelab_ branding */
+
+/* ── MAIN LAYOUT ──────────────────────────────────────────── */
+main { padding: 24px; max-width: 1440px; margin: 0 auto; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ── TOPOLOGY ─────────────────────────────────────────────── */
+.topo-legend {
+  display: flex; flex-wrap: wrap; gap: 16px;
+  padding: 10px 14px; margin-bottom: 16px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #c0c0c0; }  /* brighter legend text */
+.legend-toggle {
+  margin-left: auto;
+  background: var(--bg3); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  font-family: var(--font); font-size: 11px; font-weight: 500;
+  padding: 4px 10px; cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.legend-toggle:hover { background: var(--bg); border-color: var(--blue); color: var(--blue); }
+.legend-toggle.active {
+  background: var(--blue); border-color: var(--blue); color: var(--bg);
+}
+.legend-toggle.active:hover { background: var(--blue); filter: brightness(1.1); color: var(--bg); }
+.legend-line  { width: 24px; height: 3px; border-radius: 1.5px; filter: brightness(1.15) saturate(1.1); box-shadow: 0 0 4px currentColor; }  /* thicker + subtle bloom so the color samples pop against true black */
+
+.topo-wrapper { position: relative; overflow: visible; }
+#conn-svg {
+  position: absolute; top: 0; left: 0;
+  pointer-events: none; overflow: visible; z-index: 1;
+}
+
+.topo-layout {
+  display: flex; flex-direction: column; gap: 14px;
+  position: relative; z-index: 10;
+  align-items: center;  /* each row hugs its content; Mini PC no longer stretches to full page width */
+}
+
+/* Rows */
+.topo-row {
+  display: flex; justify-content: center;
+  align-items: flex-start; gap: 10px; flex-wrap: wrap;
+}
+
+/* Boundary boxes */
+.bx {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px; position: relative;
+}
+.bx-label {
+  position: absolute; top: -9px; left: 10px;
+  background: var(--bg); padding: 0 6px;
+  font-size: 10px; font-family: var(--mono); color: var(--muted);
+  white-space: nowrap; pointer-events: none;
+}
+/* Outer "physical" boxes (Mini PC, Proxmox) use a dotted style so the eye
+   parses them as soft grouping containers, never as another connector line.
+   Inner subnet/service boxes keep a solid (but low-alpha) edge for grouping. */
+/* Box colors retuned for OLED — restrained accents that pop against #000
+   without screaming. Each box stays visually distinct so the hierarchy still
+   reads at a glance. */
+.bx-optiplex { border-color: rgba(181,138,255,.9);  background: rgba(181,138,255,.06); }                                          /* Mini PC outer — vivid purple (ties to the homelab_ H1) */
+.bx-proxmox  { border-color: rgba(129,140,248,.8);  background: rgba(129,140,248,.05);  min-width: 0; }                          /* Proxmox VE — indigo, sits between the Mini PC purple and the auto-deploy blue */
+.bx-vlan10   { border-color: rgba(93,214,116,.5);   background: rgba(93,214,116,.04);   min-width: 190px; align-self: flex-start; } /* VLAN 10 mgmt — green */
+.bx-vlan20   { border-color: rgba(77,214,194,.5);   background: rgba(77,214,194,.04);   min-width: 190px; align-self: flex-start; } /* VLAN 20 services — teal */
+.bx-vlan30   { border-color: rgba(255,90,108,.5);   background: rgba(255,90,108,.04);   min-width: 240px; align-self: flex-start; } /* VLAN 30 automation — coral */
+.bx-agent60-vm      { border-color: rgba(255,138,92,.5);   background: rgba(255,138,92,.04); }                                           /* agent60 VM — orange */
+.bx-agent60-scripts   { border-color: rgba(245,200,66,.55);  background: rgba(245,200,66,.04);   min-width: 130px; }                       /* agent60 script group — amber */
+.bx-deploy   { border-color: rgba(77,158,255,.55);  background: rgba(77,158,255,.04);   min-width: 110px; }                       /* auto-deploy — blue */
+
+.hflex { display: flex; gap: 10px; align-items: flex-start; }
+.vflex { display: flex; flex-direction: column; gap: 8px; }
+
+/* Nodes */
+.node {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 3px; padding: 8px 10px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 6px; cursor: pointer;
+  transition: all .15s; min-width: 84px; text-align: center;
+  position: relative; user-select: none;
+}
+.node:hover {
+  border-color: var(--blue); background: var(--bg3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(88,166,255,.12);
+}
+.node.selected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(88,166,255,.2);
+}
+.n-icon  { font-size: 18px; line-height: 1; }
+.n-label { font-size: 11px; font-weight: 600; color: var(--text); line-height: 1.3; }
+.n-sub   { font-size: 10px; color: var(--muted); font-family: var(--mono); line-height: 1.2; }
+.n-badge {
+  font-size: 9px; padding: 1px 5px; border-radius: 3px;
+  font-family: var(--mono); font-weight: 700; letter-spacing: .3px; margin-top: 1px;
+}
+.b-ext  { background: rgba(88,166,255,.15);  color: var(--blue); }
+.b-vm   { background: rgba(63,185,80,.2);    color: var(--green); }
+.b-lxc  { background: rgba(210,153,34,.2);   color: var(--yellow); }
+.b-svc  { background: rgba(255,123,114,.2);  color: var(--orange); }
+.b-fw   { background: rgba(248,81,73,.2);    color: var(--red); }
+
+/* Node type accent borders */
+.node.ext   { border-color: #1f6feb; }
+.node.rtr   { border-color: #388bfd; }
+.node.vm    { border-color: #2ea043; }
+.node.lxc   { border-color: #9e6a03; }
+.node.sw    { border-color: #8b5cf6; }
+.node.svc   { border-color: #b44f38; }
+.node.fw    { border-color: #8d1f1f; }
+
+/* ── DETAIL PANEL ─────────────────────────────────────────── */
+#detail-panel {
+  position: fixed; right: -380px; top: 0;
+  width: 360px; height: 100vh;
+  background: var(--bg2); border-left: 1px solid var(--border);
+  z-index: 500; overflow-y: auto;
+  transition: right .25s cubic-bezier(.4,0,.2,1);
+  display: flex; flex-direction: column;
+}
+#detail-panel.open { right: 0; }
+
+.panel-head {
+  padding: 18px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 12px;
+  flex-shrink: 0;
+}
+.panel-ico  { font-size: 26px; flex-shrink: 0; }
+.panel-meta { flex: 1; min-width: 0; }
+.panel-meta h2 { font-size: 15px; font-weight: 600; }
+.panel-meta .panel-type { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.panel-close {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 16px; padding: 4px 6px; border-radius: 4px;
+  transition: color .15s, background .15s;
+}
+.panel-close:hover { color: var(--text); background: var(--bg3); }
+
+.panel-body { padding: 18px; overflow-y: auto; flex: 1; }
+.panel-section { margin-bottom: 18px; }
+.panel-section:last-child { margin-bottom: 0; }
+.panel-section h3 {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px; color: var(--muted);
+  margin-bottom: 8px;
+}
+.kv-grid {
+  display: grid; grid-template-columns: auto 1fr;
+  gap: 5px 10px; align-items: baseline;
+}
+.kv-k { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.kv-v { font-size: 11px; font-family: var(--mono); color: var(--text); word-break: break-all; }
+.panel-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.panel-list li {
+  font-size: 11px; padding: 5px 10px;
+  background: var(--bg3); border-radius: 4px;
+  border-left: 2px solid var(--border);
+}
+.pl-g { border-left-color: var(--green); }
+.pl-b { border-left-color: var(--blue); }
+.pl-y { border-left-color: var(--yellow); }
+.pl-r { border-left-color: var(--red); }
+.pl-p { border-left-color: var(--purple); }
+
+/* ── VLANS TAB ────────────────────────────────────────────── */
+.vlan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+.vlan-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden;
+}
+.vlan-card-head {
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.vlan-tag {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  padding: 3px 8px; border-radius: 4px;
+  min-width: 48px; text-align: center;
+}
+.vlan-card-head h3 { font-size: 14px; font-weight: 600; }
+.vlan-subnet { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+.vlan-body { padding: 12px 14px; }
+.chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.chip {
+  font-size: 10px; font-family: var(--mono); padding: 2px 7px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+}
+.fw-table { width: 100%; border-collapse: collapse; }
+.fw-table th {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--muted); padding: 5px 7px; text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.fw-table td { font-size: 11px; font-family: var(--mono); padding: 5px 7px; border-bottom: 1px solid var(--bg3); }
+.fw-table tr:last-child td { border-bottom: none; }
+.a-pass  { color: var(--green); font-weight: 700; }
+.a-block { color: var(--red);   font-weight: 700; }
+
+/* ── AGENT60 TAB ──────────────────────────────────────────── */
+.section-heading {
+  font-size: 15px; font-weight: 600; margin-bottom: 14px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.report-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px; margin-bottom: 24px;
+}
+.report-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px;
+}
+.rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rc-head h3 { font-size: 13px; font-weight: 600; }
+.rc-cron {
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  background: var(--bg3); padding: 2px 7px; border-radius: 3px; margin-left: auto;
+}
+.rc-desc { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.5; }
+
+.pipeline {
+  display: flex; align-items: stretch; flex-wrap: wrap; gap: 0;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px; overflow-x: auto;
+  margin-bottom: 24px;
+}
+.p-step {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 3px; padding: 10px 12px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 6px; min-width: 100px; text-align: center; flex-shrink: 0;
+}
+.p-icon   { font-size: 16px; }
+.p-name   { font-size: 11px; font-weight: 600; }
+.p-detail { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+.p-arrow  { font-size: 16px; color: var(--muted); padding: 0 6px; align-self: center; flex-shrink: 0; }
+
+/* ── TROUBLESHOOTING ──────────────────────────────────────── */
+.trouble-block { margin-bottom: 28px; }
+.trouble-heading {
+  font-size: 14px; font-weight: 600; margin-bottom: 12px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.accordion { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.acc-item  { border-bottom: 1px solid var(--border); }
+.acc-item:last-child { border-bottom: none; }
+
+.acc-trigger {
+  width: 100%; background: var(--bg2); border: none;
+  color: var(--text); cursor: pointer;
+  font-size: 13px; font-family: var(--font); font-weight: 500;
+  padding: 13px 14px;
+  display: flex; align-items: center; gap: 10px;
+  text-align: left; transition: background .15s;
+}
+.acc-trigger:hover { background: var(--bg3); }
+.acc-trigger.open  { background: var(--bg3); }
+
+.sev { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.sev-h { background: var(--red); }
+.sev-m { background: var(--yellow); }
+.sev-l { background: var(--green); }
+
+.acc-chevron { margin-left: auto; font-size: 11px; color: var(--muted); transition: transform .2s; }
+.acc-trigger.open .acc-chevron { transform: rotate(180deg); }
+
+.status-pill {
+  font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600;
+}
+.s-fixed   { background: rgba(63,185,80,.2);  color: var(--green); }
+.s-known   { background: rgba(210,153,34,.2); color: var(--yellow); }
+.s-pending { background: rgba(88,166,255,.15);color: var(--blue); }
+
+.acc-body {
+  display: none; padding: 14px;
+  background: var(--bg2);
+}
+.acc-body.open { display: block; }
+.issue-box {
+  background: var(--bg3); border-radius: 6px; padding: 14px;
+}
+.issue-box h4 {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--muted); margin-bottom: 6px;
+}
+.issue-box p { font-size: 12px; color: var(--text); line-height: 1.55; margin-bottom: 8px; }
+.issue-box p:last-child { margin-bottom: 0; }
+.code-block {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--bg); color: var(--green);
+  padding: 10px 12px; border-radius: 4px;
+  border: 1px solid var(--border);
+  overflow-x: auto; white-space: pre;
+  margin-top: 8px; display: block;
+}
+.ic { font-family: var(--mono); font-size: 11px; background: var(--bg); padding: 1px 5px; border-radius: 3px; }
+
+/* ── DOCUMENTATION TAB ────────────────────────────────────── */
+#tab-docs { max-width: 980px; margin: 0 auto; }
+
+.docs-hero {
+  position: relative;
+  background: linear-gradient(135deg, rgba(31,71,136,.22), rgba(63,75,191,.06));
+  border: 1px solid #3f4bbf;
+  border-radius: 12px;
+  padding: 22px 24px;
+  margin-bottom: 32px;
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+.docs-hero-ico {
+  font-size: 36px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.docs-hero h2  { font-size: 20px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.3px; }
+.docs-lead     { font-size: 13px; line-height: 1.7; color: var(--text); }
+.docs-p        { font-size: 13px; line-height: 1.65; color: var(--text); margin-bottom: 12px; }
+.docs-p:last-child { margin-bottom: 0; }
+.docs-muted    { color: var(--muted); font-size: 12px; line-height: 1.55; margin: 6px 0 0; }
+
+/* Section headings get a top margin so each block has breathing room */
+#tab-docs .section-heading {
+  font-size: 15px;
+  margin-top: 32px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+#tab-docs .section-heading:first-of-type { margin-top: 0; }
+
+.section-heading-sm {
+  font-size: 11px; font-weight: 700;
+  margin-top: 18px; margin-bottom: 10px;
+  color: var(--muted); text-transform: uppercase; letter-spacing: 1px;
+}
+
+/* Lists inside docs need a touch more vertical room */
+#tab-docs .panel-list { gap: 6px; margin-bottom: 6px; }
+#tab-docs .panel-list li { padding: 7px 12px; font-size: 12px; line-height: 1.55; }
+.tab-link { color: var(--blue); cursor: pointer; text-decoration: none; border-bottom: 1px dashed transparent; transition: border-color .15s ease; }
+.tab-link:hover { border-bottom-color: var(--blue); }
+
+/* Tables ── scrollable on narrow viewports */
+.docs-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  border: 1px solid #4a4a4a;          /* brighter outer frame so the table pops from #000 */
+  background: #14141a;                 /* lifted a touch above var(--bg2) */
+}
+.docs-table {
+  width: 100%; border-collapse: collapse;
+  background: transparent; border: none; border-radius: 0;
+  overflow: visible; margin: 0;
+}
+.docs-table th {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: #d4d4d4;                       /* brighter header text */
+  padding: 10px 12px; text-align: left; white-space: nowrap;
+  background: #1f1a2e;                  /* subtle purple-tinted header bar — matches the page theme */
+  border-bottom: 1px solid #5a4a85;     /* purple-tinged divider below the header row */
+}
+.docs-table td {
+  font-size: 12px; padding: 9px 12px;
+  border-bottom: 1px solid #3a3a3a;     /* clearer row separator (was nearly invisible at var(--bg3)) */
+  color: var(--text);
+  vertical-align: top;
+}
+.docs-table tr:hover td { background: rgba(181,138,255,.04); }  /* faint purple row-hover */
+.docs-table tr:last-child td { border-bottom: none; }
+.docs-table td:first-child { font-weight: 600; white-space: nowrap; }
+
+/* Cards */
+.docs-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.docs-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 16px 18px;
+}
+.docs-card h4 {
+  font-size: 13px; font-weight: 600; margin-bottom: 10px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--bg3);
+}
+.docs-card p  { font-size: 12px; line-height: 1.55; color: var(--text); }
+.docs-card ul {
+  list-style: none; display: flex; flex-direction: column; gap: 6px;
+}
+.docs-card ul li {
+  font-size: 12px; line-height: 1.5; color: var(--text);
+  padding-left: 14px; position: relative;
+}
+.docs-card ul li::before {
+  content: "▸"; position: absolute; left: 0;
+  color: var(--blue); font-size: 10px; top: 3px;
+}
+
+/* Ordered list (physical wiring) */
+.docs-ol {
+  list-style: none;
+  counter-reset: step;
+  padding: 0;
+  display: flex; flex-direction: column; gap: 8px;
+  margin-bottom: 14px;
+}
+.docs-ol li {
+  font-size: 13px; line-height: 1.55; color: var(--text);
+  padding: 10px 12px 10px 40px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  position: relative;
+  counter-increment: step;
+}
+.docs-ol li::before {
+  content: counter(step);
+  position: absolute;
+  left: 12px; top: 50%; transform: translateY(-50%);
+  width: 20px; height: 20px;
+  background: var(--blue);
+  color: var(--bg);
+  font-size: 11px; font-weight: 700;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Nested code-style list for chmod paths (replaces docs-nested) */
+.docs-codelist {
+  margin-top: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
+.docs-codelist .path { color: var(--green); }
+.docs-codelist .mode { color: var(--muted); }
+
+/* ── SUBNET STRIP ─────────────────────────────────────────── */
+.subnet-strip {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 0 0 10px; padding: 8px 10px;
+  background: rgba(63,75,191,.04);
+  border: 1px solid #3f4bbf;
+  border-radius: 5px;
+  justify-content: center;
+}
+.ss-chip {
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  padding: 3px 9px; border-radius: 4px; white-space: nowrap;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  transition: all .15s;
+}
+.ss-chip:hover { transform: translateY(-1px); filter: brightness(1.15); }
+.ss-chip.ss-selected {
+  box-shadow: 0 0 0 2px currentColor;
+  filter: brightness(1.2);
+}
+.ss-lan { color: var(--blue);   border-color: var(--blue); }
+.ss-v10 { color: var(--green);  border-color: var(--green); }
+.ss-v20 { color: var(--teal);   border-color: var(--teal); }
+.ss-v30 { color: var(--orange); border-color: var(--orange); }
+.ss-v40 { color: var(--muted);  border-color: var(--muted); }
+
+/* ── SVG CONNECTIONS ──────────────────────────────────────── */
+.cl {
+  fill: none; stroke-width: 1.5; opacity: .2;
+  transition: opacity .25s, stroke-width .15s;
+}
+.cl-phys { stroke: var(--purple); }
+.cl-net  { stroke: var(--blue); }
+.cl-dns  { stroke: var(--green); stroke-dasharray: 5 3; }
+.cl-data { stroke: var(--teal);  stroke-dasharray: 6 3; }
+.cl-mgmt { stroke: #c0c0c0; stroke-dasharray: 4 4; }  /* brighter than var(--muted) — Tailscale/mgmt lines kept readable on OLED #000 */
+.cl-dep  { stroke: var(--yellow); }
+
+/* Active / dimmed line states */
+.cl-dim    { opacity: .05 !important; }
+.cl-active { opacity: 1 !important; stroke-width: 2.5 !important; }
+.cl-active.cl-phys { filter: drop-shadow(0 0 4px rgba(188,140,255,.7)); }
+.cl-active.cl-net  { filter: drop-shadow(0 0 4px rgba(88,166,255,.7)); }
+.cl-active.cl-dns  { filter: drop-shadow(0 0 4px rgba(63,185,80,.7)); }
+.cl-active.cl-data { filter: drop-shadow(0 0 4px rgba(57,208,216,.7)); }
+.cl-active.cl-mgmt { filter: drop-shadow(0 0 4px rgba(192,192,192,.7)); }
+.cl-active.cl-dep  { filter: drop-shadow(0 0 4px rgba(210,153,34,.7)); }
+
+/* Node + boundary dimming when something is selected */
+#topo-wrap.has-selection .node {
+  opacity: 0.12;
+  transition: opacity .25s;
+}
+#topo-wrap.has-selection .node.selected,
+#topo-wrap.has-selection .node.conn-lit {
+  opacity: 1;
+  transition: opacity .25s;
+}
+#topo-wrap.has-selection .bx-label {
+  opacity: 0.25;
+  transition: opacity .25s;
+}
+#topo-wrap.has-selection .bx {
+  border-color: rgba(48,54,61,.35);
+  transition: border-color .25s;
+}
+#topo-wrap.has-selection .ss-chip {
+  opacity: 0.15;
+  transition: opacity .25s;
+}
+#topo-wrap.has-selection .ss-chip.ss-lit {
+  opacity: 1;
+  transition: opacity .25s;
+}
+/* Dim the subnet strip container itself (its blue outline) when something
+   is selected — otherwise the bright border stays visible while chips fade. */
+#topo-wrap.has-selection .subnet-strip {
+  border-color: transparent;
+  background: transparent;
+  transition: border-color .25s, background .25s;
+}
+/* Keep selected node's own boundary visible */
+#topo-wrap.has-selection .node.selected,
+#topo-wrap.has-selection .node.conn-lit {
+  z-index: 20;
+}
+
+/* ── MOBILE / RESPONSIVE ──────────────────────────────────── */
+@media (max-width: 900px) {
+  main { padding: 16px; }
+  /* Topology becomes horizontally scrollable so the diagram stays legible */
+  .topo-wrapper {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 10px;
+  }
+  .topo-layout { min-width: 900px; }
+  #conn-svg { min-width: 900px; }
+}
+
+@media (max-width: 768px) {
+  /* Header */
+  header { padding: 12px 14px; gap: 10px; }
+  .header-logo { width: 30px; height: 30px; font-size: 15px; }
+  header h1 { font-size: 15px; }
+  header p { font-size: 11px; }
+  .header-status { display: none; }
+
+  /* Nav: tighter, scrollable */
+  nav { padding: 0 12px; }
+  .tab-btn { font-size: 12px; padding: 10px 11px; gap: 4px; }
+
+  /* Main padding */
+  main { padding: 14px 12px; }
+
+  /* Detail panel fills the screen */
+  #detail-panel { width: 100%; right: -100%; }
+  #detail-panel.open { right: 0; }
+  .panel-head { padding: 14px; }
+  .panel-body { padding: 14px; }
+
+  /* Subnet strip: smaller chips */
+  .subnet-strip { padding: 6px 8px; gap: 4px; }
+  .ss-chip { font-size: 9px; padding: 2px 6px; }
+
+  /* Legend wraps cleanly */
+  .topo-legend { padding: 8px 10px; gap: 10px; }
+  .legend-item { font-size: 10px; }
+
+  /* VLANs tab: single column, smaller padding */
+  .vlan-grid { grid-template-columns: 1fr; gap: 12px; }
+  .vlan-card-head { padding: 10px 12px; }
+  .vlan-body { padding: 10px 12px; }
+
+  /* agent60 tab: single column + tighter pipeline */
+  .report-cards { grid-template-columns: 1fr; }
+  .pipeline { padding: 14px; gap: 6px; }
+  .p-step { min-width: 90px; padding: 8px 10px; }
+  .p-name { font-size: 10px; }
+  .p-detail { font-size: 9px; }
+  .p-arrow { font-size: 14px; padding: 0 2px; }
+
+  /* Troubleshooting */
+  .acc-trigger { font-size: 12px; padding: 11px 12px; gap: 8px; }
+  .acc-body { padding: 0 12px 12px; }
+  .issue-box { padding: 12px; }
+  .status-pill { font-size: 9px; padding: 1px 6px; }
+  .code-block { font-size: 10px; padding: 8px 10px; }
+
+  /* Docs tab */
+  .docs-hero { padding: 16px; gap: 14px; }
+  .docs-hero-ico { font-size: 30px; }
+  .docs-hero h2 { font-size: 17px; }
+  .docs-lead { font-size: 12px; }
+  .docs-cards { grid-template-columns: 1fr; }
+  #tab-docs .section-heading { margin-top: 26px; }
+  .docs-codelist { font-size: 10px; padding: 6px 8px; }
+}
+
+@media (max-width: 480px) {
+  header h1 { font-size: 14px; }
+  header p { display: none; }
+  .tab-btn { padding: 9px 9px; font-size: 11px; }
+  .topo-layout { min-width: 760px; }
+  #conn-svg { min-width: 760px; }
+  .fw-table th, .fw-table td { font-size: 10px; padding: 4px 5px; }
+  .docs-table th, .docs-table td { font-size: 11px; padding: 7px 9px; }
+}
+
+/* ── CONNECTION LIST (panel) ──────────────────────────────── */
+.conn-list { display: flex; flex-direction: column; gap: 5px; }
+.conn-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 7px 10px; background: var(--bg3); border-radius: 5px;
+}
+.conn-dot   { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+.conn-arrow { font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+.conn-info  { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.conn-name  { font-size: 12px; font-weight: 600; }
+.conn-desc  { font-size: 10px; color: var(--muted); font-family: var(--mono); line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-logo">🖥️</div>
+  <div>
+    <h1>homelab</h1>
+    <p>Mini PC · Proxmox VE · 16GB RAM</p>
+  </div>
+  <div class="header-status">
+    <div class="status-dot"></div>
+    <span>Operational</span>
+  </div>
+</header>
+
+<nav>
+  <button class="tab-btn active" data-tab="topology">🗺️ Topology</button>
+  <button class="tab-btn" data-tab="vlans">🔀 VLANs</button>
+  <button class="tab-btn" data-tab="agent60">📅 agent60</button>
+  <button class="tab-btn" data-tab="troubleshooting">🔧 Troubleshooting</button>
+  <button class="tab-btn" data-tab="docs">📖 Docs</button>
+</nav>
+
+<main>
+
+<!-- ════════════════ TOPOLOGY ════════════════ -->
+<section id="tab-topology" class="tab-content active">
+
+  <div class="topo-legend">
+    <div class="legend-item"><div class="legend-line" style="background:var(--purple)"></div>Physical</div>
+    <div class="legend-item"><div class="legend-line" style="background:var(--blue)"></div>Network routing</div>
+    <div class="legend-item"><div class="legend-line" style="background-image:repeating-linear-gradient(to right, var(--green) 0 5px, transparent 5px 8px)"></div>DNS</div>
+    <div class="legend-item"><div class="legend-line" style="background-image:repeating-linear-gradient(to right, var(--teal) 0 6px, transparent 6px 9px)"></div>Data / API</div>
+    <div class="legend-item"><div class="legend-line" style="background:var(--yellow)"></div>Auto-deploy</div>
+    <div class="legend-item"><div class="legend-line" style="background-image:repeating-linear-gradient(to right, #c0c0c0 0 4px, transparent 4px 8px)"></div>Mgmt / Remote</div>
+    <div class="legend-item"><span style="font-size:11px">▸</span><span style="color:var(--muted)">Arrow = one-way flow</span></div>
+    <button type="button" id="show-all-conns" class="legend-toggle" aria-pressed="false" title="Highlight every node and connector at once">Show all connections</button>
+  </div>
+
+  <div class="topo-wrapper" id="topo-wrap">
+    <svg id="conn-svg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr-blue"   markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto"><polygon points="0 0,6 2,0 4" fill="rgba(88,166,255,.6)"/></marker>
+        <marker id="arr-teal"   markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto"><polygon points="0 0,6 2,0 4" fill="rgba(57,208,216,.7)"/></marker>
+        <marker id="arr-yellow" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto"><polygon points="0 0,6 2,0 4" fill="rgba(210,153,34,.7)"/></marker>
+      </defs>
+    </svg>
+
+    <div class="topo-layout">
+
+      <!-- Row 1: External -->
+      <div class="topo-row">
+        <div class="node ext" id="n-tailscale" data-node="tailscale">
+          <span class="n-icon">🔒</span>
+          <span class="n-label">Tailscale</span>
+          <span class="n-badge b-ext">EXT</span>
+        </div>
+        <div class="node ext" id="n-github" data-node="github">
+          <span class="n-icon">⑂</span>
+          <span class="n-label">GitHub</span>
+          <span class="n-badge b-ext">EXT</span>
+        </div>
+        <div class="node ext" id="n-anthropic" data-node="anthropic">
+          <span class="n-icon">🤖</span>
+          <span class="n-label">Anthropic</span>
+          <span class="n-sub">Claude API + MCPs</span>
+          <span class="n-badge b-ext">EXT</span>
+        </div>
+        <div class="node ext" id="n-openmeteo" data-node="openmeteo">
+          <span class="n-icon">🌤</span>
+          <span class="n-label">Open-Meteo</span>
+          <span class="n-badge b-ext">EXT</span>
+        </div>
+        <div class="node ext" id="n-zoho" data-node="zoho">
+          <span class="n-icon">📧</span>
+          <span class="n-label">SMTP provider</span>
+          <span class="n-sub">smtp :465</span>
+          <span class="n-badge b-ext">EXT</span>
+        </div>
+      </div>
+
+      <!-- Row 2: ISP Router -->
+      <div class="topo-row">
+        <div class="node rtr" id="n-router" data-node="router">
+          <span class="n-icon">📡</span>
+          <span class="n-label">ISP Router</span>
+          <span class="n-sub">192.168.X.X</span>
+        </div>
+      </div>
+
+      <!-- Row 3: Switch (its own device) sitting beside the Mini PC -->
+      <div class="topo-row" style="align-items:flex-start; gap:18px;">
+
+        <!-- Unifi Flex Mini — standalone external switch, connected to Mini PC via USB-C NIC -->
+        <div class="node sw" id="n-switch" data-node="switch">
+          <span class="n-icon">🔀</span>
+          <span class="n-label">Unifi Flex Mini</span>
+          <span class="n-sub">10.0.10.87</span>
+          <span class="n-sub">2.5G Switch</span>
+        </div>
+
+        <!-- Mini PC boundary -->
+        <div class="bx bx-optiplex">
+          <span class="bx-label" style="color:var(--purple);">🖥️ Mini PC — 16GB RAM · 256GB SSD</span>
+
+          <!-- Proxmox boundary -->
+          <div class="bx bx-proxmox" style="margin-top:8px;">
+            <span class="bx-label" style="color:#818cf8;">Proxmox VE — 10.0.0.XX</span>
+
+            <!-- OPNsense -->
+            <div class="topo-row" style="margin-top:6px; margin-bottom:8px;">
+              <div class="node fw" id="n-opnsense" data-node="opnsense">
+                <span class="n-icon">🛡️</span>
+                <span class="n-label">OPNsense VM</span>
+                <span class="n-sub">WAN 192.168.X.XX</span>
+                <span class="n-sub">LAN 10.0.0.1</span>
+                <span class="n-badge b-fw">VM</span>
+              </div>
+            </div>
+
+            <!-- Subnet strip -->
+            <div class="subnet-strip">
+              <span class="ss-chip ss-lan" data-vlan="lan">LAN · 10.0.0.0/24</span>
+              <span class="ss-chip ss-v10" data-vlan="v10">VLAN 10 · 10.0.10.0/24</span>
+              <span class="ss-chip ss-v20" data-vlan="v20">VLAN 20 · 10.0.20.0/24</span>
+              <span class="ss-chip ss-v30" data-vlan="v30">VLAN 30 · 10.0.30.0/24</span>
+              <span class="ss-chip ss-v40" data-vlan="v40">VLAN 40 · 10.0.40.0/24</span>
+            </div>
+
+            <!-- VLANs row -->
+            <div class="hflex" style="align-items:flex-start; gap:14px; justify-content:center; padding-top: 14px;">
+
+              <!-- VLAN 10 -->
+              <div class="bx bx-vlan10">
+                <span class="bx-label" style="color:var(--green);">VLAN 10 — mgmt · 10.0.10.0/24</span>
+                <div class="vflex" style="margin-top:8px;">
+                  <div class="node lxc" id="n-adguard" data-node="adguard">
+                    <span class="n-icon">🚫</span>
+                    <span class="n-label">AdGuard Home</span>
+                    <span class="n-sub">10.0.10.XX</span>
+                    <span class="n-badge b-lxc">LXC</span>
+                  </div>
+                  <div class="node lxc" id="n-unifi-os" data-node="unifi-os">
+                    <span class="n-icon">🖧</span>
+                    <span class="n-label">Unifi OS Server</span>
+                    <span class="n-sub">10.0.10.XX</span>
+                    <span class="n-badge b-lxc">LXC</span>
+                  </div>
+                  <div class="node lxc" id="n-homarr" data-node="homarr">
+                    <span class="n-icon">📊</span>
+                    <span class="n-label">Homarr</span>
+                    <span class="n-sub">10.0.10.XX</span>
+                    <span class="n-badge b-lxc">LXC</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- VLAN 20 -->
+              <div class="bx bx-vlan20">
+                <span class="bx-label" style="color:var(--teal);">VLAN 20 — services · 10.0.20.0/24 · tailscale-only inbound</span>
+                <div class="vflex" style="margin-top:8px;">
+                  <div class="node lxc" id="n-homelab-site" data-node="homelab-site">
+                    <span class="n-icon">📖</span>
+                    <span class="n-label">homelab-site</span>
+                    <span class="n-sub">10.0.20.XX</span>
+                    <span class="n-sub">nginx · this page</span>
+                    <span class="n-badge b-lxc">LXC</span>
+                  </div>
+                  <div class="node vm" id="n-jellyfin" data-node="jellyfin">
+                    <span class="n-icon">🎬</span>
+                    <span class="n-label">Jellyfin</span>
+                    <span class="n-sub">10.0.20.x</span>
+                    <span class="n-sub" style="color:var(--teal);font-style:italic;">(planned)</span>
+                    <span class="n-badge b-vm">VM</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- VLAN 30 -->
+              <div class="bx bx-vlan30">
+                <span class="bx-label" style="color:var(--orange);">VLAN 30 — automation · 10.0.30.0/24 · internet-only</span>
+
+                <div class="bx bx-agent60-vm" style="margin-top:8px;">
+                  <span class="bx-label" style="color:#f78166;">agent60 VM — Ubuntu (default user) · 10.0.30.XX · 2 cores · 2GB</span>
+                  <div class="hflex" style="margin-top:8px; align-items:stretch;">
+
+                    <!-- agent60 -->
+                    <div class="bx bx-agent60-scripts">
+                      <span class="bx-label" style="color:var(--yellow);">agent60</span>
+                      <div class="vflex" style="margin-top:8px;">
+                        <div class="node svc" id="n-reports" data-node="reports">
+                          <span class="n-icon">📅</span>
+                          <span class="n-label">Cron Reports</span>
+                          <span class="n-sub">Fri · Mon · Tue–Sun</span>
+                          <span class="n-badge b-svc">SVC</span>
+                        </div>
+                        <div class="node svc" id="n-claude-cli" data-node="claude-cli">
+                          <span class="n-icon">💬</span>
+                          <span class="n-label">Claude CLI</span>
+                          <span class="n-sub">claude -p</span>
+                          <span class="n-badge b-svc">SVC</span>
+                        </div>
+                        <div class="node svc" id="n-msmtp" data-node="msmtp">
+                          <span class="n-icon">📤</span>
+                          <span class="n-label">msmtp</span>
+                          <span class="n-sub">SMTP client</span>
+                          <span class="n-badge b-svc">SVC</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- auto-deploy -->
+                    <div class="bx bx-deploy">
+                      <span class="bx-label" style="color:var(--teal);">auto-deploy</span>
+                      <div class="vflex" style="margin-top:8px;">
+                        <div class="node svc" id="n-ngrok" data-node="ngrok">
+                          <span class="n-icon">🌐</span>
+                          <span class="n-label">ngrok</span>
+                          <span class="n-sub">:443 tunnel</span>
+                          <span class="n-badge b-svc">SVC</span>
+                        </div>
+                        <div class="node svc" id="n-webhook" data-node="webhook">
+                          <span class="n-icon">🪝</span>
+                          <span class="n-label">webhook</span>
+                          <span class="n-sub">Node.js :3000</span>
+                          <span class="n-badge b-svc">SVC</span>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div><!-- end VLAN 30 -->
+
+            </div><!-- end VLANs hflex -->
+          </div><!-- end Proxmox -->
+        </div><!-- end Mini PC boundary -->
+      </div><!-- end Switch+Mini PC row -->
+
+    </div><!-- end topo-layout -->
+  </div><!-- end topo-wrapper -->
+</section>
+
+<!-- ════════════════ VLANS ════════════════ -->
+<section id="tab-vlans" class="tab-content">
+  <div class="vlan-grid">
+
+    <div class="vlan-card">
+      <div class="vlan-card-head">
+        <span class="vlan-tag" style="background:rgba(88,166,255,.15);color:var(--blue)">LAN</span>
+        <h3>LAN</h3>
+        <span class="vlan-subnet">10.0.0.0/24</span>
+      </div>
+      <div class="vlan-body">
+        <div class="chip-row">
+          <span class="chip">Proxmox 10.0.0.XX</span>
+          <span class="chip">OPNsense 10.0.0.1</span>
+          <span class="chip">Trusted wired</span>
+        </div>
+        <table class="fw-table">
+          <tr><th>Action</th><th>Source</th><th>Destination</th><th>Note</th></tr>
+          <tr><td class="a-block">Block</td><td>LAN</td><td>mgmt</td><td>Isolated</td></tr>
+          <tr><td class="a-block">Block</td><td>LAN</td><td>services</td><td>Isolated</td></tr>
+          <tr><td class="a-block">Block</td><td>LAN</td><td>automation</td><td>Isolated</td></tr>
+          <tr><td class="a-pass">Pass</td><td>LAN</td><td>*</td><td>Internet OK</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="vlan-card">
+      <div class="vlan-card-head">
+        <span class="vlan-tag" style="background:rgba(63,185,80,.15);color:var(--green)">10</span>
+        <h3>mgmt</h3>
+        <span class="vlan-subnet">10.0.10.0/24</span>
+      </div>
+      <div class="vlan-body">
+        <div class="chip-row">
+          <span class="chip">AdGuard 10.0.10.XX</span>
+          <span class="chip">Unifi OS 10.0.10.XX</span>
+          <span class="chip">Homarr 10.0.10.XX</span>
+        </div>
+        <table class="fw-table">
+          <tr><th>Action</th><th>Port</th><th>Destination</th><th>Note</th></tr>
+          <tr><td class="a-pass">Pass</td><td>53</td><td>*</td><td>AdGuard bootstrap DNS (resolves DoH upstream hostname)</td></tr>
+          <tr><td class="a-pass">Pass</td><td>53</td><td>AdGuard</td><td>DNS (internal — mgmt devices → AdGuard)</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>RFC1918</td><td>No internal</td></tr>
+          <tr><td class="a-pass">Pass</td><td>443</td><td>*</td><td>HTTPS — updates / Ubiquiti cloud / AdGuard DoH upstream</td></tr>
+          <tr><td class="a-pass">Pass</td><td>80</td><td>*</td><td>HTTP — apt repos</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>*</td><td>Default deny</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="vlan-card">
+      <div class="vlan-card-head">
+        <span class="vlan-tag" style="background:rgba(57,208,216,.15);color:var(--teal)">20</span>
+        <h3>services</h3>
+        <span class="vlan-subnet">10.0.20.0/24</span>
+      </div>
+      <div class="vlan-body">
+        <div class="chip-row">
+          <span class="chip">homelab-site 10.0.20.XX</span>
+          <span class="chip">Jellyfin (planned)</span>
+          <span class="chip" style="color:var(--teal)">tailscale-only inbound</span>
+        </div>
+        <table class="fw-table">
+          <tr><th>Action</th><th>Port</th><th>Destination</th><th>Note</th></tr>
+          <tr><td class="a-pass">Pass</td><td>53</td><td>AdGuard</td><td>DNS</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>RFC1918</td><td>No internal access</td></tr>
+          <tr><td class="a-pass">Pass</td><td>443</td><td>*</td><td>HTTPS — updates, metadata</td></tr>
+          <tr><td class="a-pass">Pass</td><td>80</td><td>*</td><td>HTTP — apt repos</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>*</td><td>Deny everything else</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="vlan-card">
+      <div class="vlan-card-head">
+        <span class="vlan-tag" style="background:rgba(255,123,114,.15);color:var(--orange)">30</span>
+        <h3>automation</h3>
+        <span class="vlan-subnet">10.0.30.0/24</span>
+      </div>
+      <div class="vlan-body">
+        <div class="chip-row">
+          <span class="chip">agent60 VM 10.0.30.XX</span>
+          <span class="chip">agent60</span>
+          <span class="chip" style="color:var(--orange)">internet-only</span>
+        </div>
+        <table class="fw-table">
+          <tr><th>Action</th><th>Port</th><th>Destination</th><th>Note</th></tr>
+          <tr><td class="a-pass">Pass</td><td>53</td><td>AdGuard</td><td>DNS only</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>RFC1918</td><td>No internal access</td></tr>
+          <tr><td class="a-pass">Pass</td><td>443</td><td>*</td><td>HTTPS (Claude, Notion, GCal)</td></tr>
+          <tr><td class="a-pass">Pass</td><td>80</td><td>*</td><td>HTTP (apt repos)</td></tr>
+          <tr><td class="a-pass">Pass</td><td>465</td><td>*</td><td>SMTP/SSL (SMTP provider)</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>*</td><td>Deny everything else</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="vlan-card">
+      <div class="vlan-card-head">
+        <span class="vlan-tag" style="background:rgba(139,148,158,.12);color:var(--muted)">40</span>
+        <h3>iot</h3>
+        <span class="vlan-subnet">10.0.40.0/24</span>
+      </div>
+      <div class="vlan-body">
+        <div class="chip-row"><span class="chip" style="color:var(--muted)">No devices yet</span></div>
+        <p style="font-size:12px;color:var(--muted)">Reserved for IoT / smart home devices. Firewall rules not yet configured.</p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════════════ AGENT60 ════════════════ -->
+<section id="tab-agent60" class="tab-content">
+
+  <p class="section-heading">Scheduled Reports</p>
+  <div class="report-cards">
+    <div class="report-card" style="border-top:3px solid var(--blue)">
+      <div class="rc-head">
+        <span style="font-size:18px">🌅</span>
+        <h3>Monday Brief</h3>
+        <span class="rc-cron">0 10 * * 1</span>
+      </div>
+      <p class="rc-desc">Preview of the week ahead: personal calendar highlights + 7-day weather forecast.</p>
+      <div class="chip-row"><span class="chip">Google Calendar MCP</span><span class="chip">Open-Meteo</span><span class="chip">5:00 AM local</span></div>
+    </div>
+    <div class="report-card" style="border-top:3px solid var(--yellow)">
+      <div class="rc-head">
+        <span style="font-size:18px">☀️</span>
+        <h3>Daily Brief</h3>
+        <span class="rc-cron">0 10 * * 2-7</span>
+      </div>
+      <p class="rc-desc">Today's calendar events, weather forecast, and outfit/prep tip.</p>
+      <div class="chip-row"><span class="chip">Google Calendar MCP</span><span class="chip">Open-Meteo</span><span class="chip">5:00 AM local Tue–Sun</span></div>
+    </div>
+    <div class="report-card" style="border-top:3px solid var(--green)">
+      <div class="rc-head">
+        <span style="font-size:18px">📅</span>
+        <h3>Friday Report</h3>
+        <span class="rc-cron">0 23 * * 5</span>
+      </div>
+      <p class="rc-desc">Weekly wrap-up of online coding class notes transcribed in Notion — topics covered, concepts learned, follow-ups.</p>
+      <div class="chip-row"><span class="chip">Notion MCP</span><span class="chip">6:00 PM local</span></div>
+    </div>
+  </div>
+
+  <p class="section-heading">Report Pipeline</p>
+  <div class="pipeline">
+    <div class="p-step"><span class="p-icon">⏰</span><span class="p-name">Cron</span><span class="p-detail">crontab</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">📜</span><span class="p-name">Shell script</span><span class="p-detail">*.sh</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">💬</span><span class="p-name">claude -p</span><span class="p-detail">headless</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">🔌</span><span class="p-name">MCP + APIs</span><span class="p-detail">Notion · GCal · Weather</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">🎨</span><span class="p-name">HTML template</span><span class="p-detail">filled by Claude</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">📤</span><span class="p-name">msmtp</span><span class="p-detail">SMTP provider :465</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">📧</span><span class="p-name">Inbox</span><span class="p-detail">HTML email</span></div>
+  </div>
+
+  <p class="section-heading">Auto-Deploy Pipeline</p>
+  <div class="pipeline">
+    <div class="p-step"><span class="p-icon">⑂</span><span class="p-name">git push</span><span class="p-detail">to main</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">🐙</span><span class="p-name">GitHub webhook</span><span class="p-detail">application/json</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">🌐</span><span class="p-name">ngrok tunnel</span><span class="p-detail">ngrok-free.app</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">🪝</span><span class="p-name">webhook.service</span><span class="p-detail">HMAC-SHA256</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">📥</span><span class="p-name">git pull</span><span class="p-detail">/opt/agent60</span></div>
+  </div>
+
+</section>
+
+<!-- ════════════════ TROUBLESHOOTING ════════════════ -->
+<section id="tab-troubleshooting" class="tab-content">
+
+  <div class="trouble-block">
+    <div class="trouble-heading">📅 agent60</div>
+    <div class="accordion">
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-h"></div>
+          AppArmor blocks msmtp — <span class="ic">permission denied</span>
+          <span class="status-pill s-fixed">fixed 2026-05-12</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p><span class="ic">msmtp: permission denied</span> when scripts pass <span class="ic">--file=</span> pointing to a path inside the repo.</p>
+            <h4 style="margin-top:10px">Cause</h4>
+            <p>AppArmor restricts msmtp to reading files only from the home directory.</p>
+            <h4 style="margin-top:10px">Fix</h4>
+            <p>Copy config to <span class="ic">~/.msmtprc</span> and remove <span class="ic">--file=</span> from all scripts.</p>
+            <code class="code-block">cp /opt/agent60/.msmtprc ~/.msmtprc
+chmod 600 ~/.msmtprc</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-h"></div>
+          Cron exits 127 — <span class="ic">command not found: claude</span>
+          <span class="status-pill s-fixed">fixed 2026-05-12</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p>Cron job exits with code 127. Log shows <span class="ic">command not found: claude</span>.</p>
+            <h4 style="margin-top:10px">Cause</h4>
+            <p>Cron runs with a stripped PATH. <span class="ic">/home/user/.local/bin</span> (where claude lives) is not included.</p>
+            <h4 style="margin-top:10px">Fix</h4>
+            <p>Add this as the very first line of <span class="ic">crontab -e</span>:</p>
+            <code class="code-block">PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-h"></div>
+          msmtp hangs / connect failed (IPv6)
+          <span class="status-pill s-fixed">fixed 2026-05-11</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p>msmtp silently hangs or shows <span class="ic">connect failed</span>. Automation VLAN is IPv4-only but msmtp resolves SMTP hostnames to IPv6 first.</p>
+            <h4 style="margin-top:10px">Fix</h4>
+            <p>Disable IPv6 on <span class="ic">agent60 VM</span> permanently:</p>
+            <code class="code-block">echo "net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1" | sudo tee /etc/sysctl.d/99-no-ipv6.conf
+sudo sysctl --system</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-m"></div>
+          msmtp authentication failed
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p><span class="ic">msmtp: authentication failed</span> even with the correct password.</p>
+            <h4 style="margin-top:10px">Fix</h4>
+            <p>Use an <strong>app password</strong> — not your regular account password. For the SMTP provider: Account Security → App Passwords.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-m"></div>
+          Emails appear sent but never arrive
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p>msmtp reports success, logs look clean, but the report email never lands in the inbox.</p>
+            <h4 style="margin-top:10px">Cause</h4>
+            <p>The test message body is just the word <span class="ic">test</span> with no <span class="ic">Subject:</span> header or real body. Providers (Gmail, etc.) silently drop or spam-filter these as malformed / suspicious mail — msmtp still reports success because the SMTP handhake completed.</p>
+            <h4 style="margin-top:10px">Fix</h4>
+            <p>Send test messages with a proper subject and body, e.g.:</p>
+            <code class="code-block">printf "Subject: msmtp test\n\nThis is a test email from the homelab.\n" | msmtp you@example.com</code>
+            <p>Once a real subject and body are present, the message arrives normally.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-m"></div>
+          TLS certificate error on msmtp
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Fix</h4>
+            <p>Remove <span class="ic">tls_trust_file</span> from <span class="ic">~/.msmtprc</span> to let msmtp use the system default CA bundle. Setting it manually to a nonexistent path causes certificate errors.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-l"></div>
+          Empty output from Claude / MCP not responding
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Diagnose</h4>
+            <p>Test MCP connectors interactively and verify auth:</p>
+            <code class="code-block">echo "List my Google Calendar events for this week" | claude -p
+echo "List my online coding class notes transcribed in Notion from the past week" | claude -p
+claude whoami</code>
+            <p>If connectors return empty, verify they are active at <span class="ic">claude.ai/connectors</span>.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-l"></div>
+          Cron runs at wrong time
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Cause</h4>
+            <p>The <span class="ic">agent60</span> VM runs UTC. local = UTC offset. Cron times must be offset accordingly.</p>
+            <h4 style="margin-top:10px">Check &amp; fix</h4>
+            <code class="code-block">timedatectl
+# To set: sudo timedatectl set-timezone America/Chicago</code>
+            <p>Example: 5:00 AM local → <span class="ic">0 10 * * 1</span> in UTC</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-l"></div>
+          Report generates but looks wrong
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Debug</h4>
+            <p>Run with <span class="ic">--dry-run</span> to generate the full report and print HTML without sending email:</p>
+            <code class="code-block">./friday_report.sh --dry-run
+./monday_brief.sh --dry-run
+./daily_brief.sh --dry-run</code>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- end agent60 block -->
+
+  <div class="trouble-block">
+    <div class="trouble-heading">🔀 Network &amp; SSH</div>
+    <div class="accordion">
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-m"></div>
+          SSH / git hangs (port 22 blocked on automation VLAN)
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Cause</h4>
+            <p>VLAN 30 only allows port 443 outbound. SSH default port 22 is blocked by firewall rules.</p>
+            <h4 style="margin-top:10px">Fix</h4>
+            <p>Route SSH via <span class="ic">ssh.github.com:443</span>. Add to <span class="ic">~/.ssh/config</span>:</p>
+            <code class="code-block">Host github.com
+  Hostname ssh.github.com
+  Port 443</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-m"></div>
+          Webhook / auto-deploy not triggering
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Diagnose</h4>
+            <code class="code-block">systemctl status webhook ngrok
+journalctl -fu webhook
+journalctl -u webhook --no-pager | grep -E "Pull|Rejected|Webhook"</code>
+            <p>If ngrok is down, verify the static domain in <span class="ic">~/.config/ngrok/ngrok.yml</span> matches the GitHub webhook URL. If the webhook is rejected, check the HMAC secret matches <span class="ic">index.js</span>.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-l"></div>
+          Proxmox management unreachable remotely
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>By design</h4>
+            <p>Proxmox (10.0.0.XX:8006) is only reachable from the LAN (10.0.0.0/24). The OPNsense Tailscale plugin advertises <strong>all</strong> subnets (LAN + VLAN 10/20/30/40), so any tailnet device has full L3 reach — connect via Tailscale and browse to <span class="ic">10.0.0.XX:8006</span>. Same path reaches Homarr (10.0.10.XX), AdGuard (10.0.10.XX), Unifi OS (10.0.10.XX), and agent60 VM (10.0.30.XX).</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- end network block -->
+
+  <div class="trouble-block">
+    <div class="trouble-heading">🖥️ Proxmox &amp; System</div>
+    <div class="accordion">
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-h"></div>
+          2FA lockout on Proxmox or OPNsense
+          <span class="status-pill s-fixed">fixed 2026-05-11</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p>TOTP code rejected at login screen — usually caused by clock drift.</p>
+            <h4 style="margin-top:10px">Fix</h4>
+            <p>Verify NTP sync. Re-generate TOTP secret under user settings if needed. 2FA locations: Proxmox → Datacenter → Users → Edit; OPNsense → System → Access → Users.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-l"></div>
+          Cron job never runs at all
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Diagnose</h4>
+            <code class="code-block">systemctl status cron
+crontab -l
+tail -f /opt/agent60/logs/friday_report.log</code>
+            <p>Simulate the exact cron environment to reproduce issues locally:</p>
+            <code class="code-block">env -i PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin \
+  HOME=$HOME USER=$USER \
+  /opt/agent60/friday_report.sh --dry-run</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-h"></div>
+          All DNS fails after adding mgmt firewall rules — <span class="ic">ECONNREFUSED</span> / <span class="ic">Could not resolve host</span>
+          <span class="status-pill s-fixed">fixed 2026-05-16</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p><span class="ic">msmtp: connect failed</span> when scripts pass <span class="ic">--file=</span> pointing to a path inside the repo.</p>
+            <p>Scripts fail with <span class="ic">Unable to connect to Anthropic services — ECONNREFUSED</span>. <span class="ic">curl</span> shows <span class="ic">Could not resolve host: api.anthropic.com</span>. DNS broken across all VLANs.</p>
+            <h4 style="margin-top:10px">Cause</h4>
+            <p>AdGuard uses DoH upstream (<span class="ic">https://dns10.quad9.net/dns-query</span>) and requires a <strong>bootstrap DNS</strong> lookup on plain port 53 to resolve the Quad9 hostname before it can connect. Adding a "deny everything else" rule to mgmt blocked this outbound port 53 request. AdGuard's cached IP kept things working briefly, then DNS failed entirely once the cache expired.</p>
+            <h4 style="margin-top:10px">Fix</h4>
+            <p>Add a rule in mgmt <strong>above the RFC1918 block</strong> allowing AdGuard's IP to reach any destination on port 53:</p>
+            <code class="code-block">Pass  TCP/UDP  10.0.10.XX → *:53  — AdGuard bootstrap DNS</code>
+            <p><strong>Rule order matters:</strong> this rule must come before the RFC1918 block, otherwise AdGuard's bootstrap queries to public resolvers are caught and dropped.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- end proxmox block -->
+
+</section>
+
+<!-- ════════════════ DOCUMENTATION ════════════════ -->
+<section id="tab-docs" class="tab-content">
+
+  <div class="docs-hero">
+    <span class="docs-hero-ico">📖</span>
+    <div>
+      <h2>Homelab Documentation</h2>
+      <p class="docs-lead">Single-node Proxmox VE homelab on a Mini PC, running OPNsense as the core firewall &amp; router. Four VLANs segment management, services, automation, and IoT. AdGuard Home provides network-wide DNS plus <span class="ic">.homelab</span> URL rewrites. Tailscale (via the OPNsense exit-node plugin) advertises every subnet for secure remote access.</p>
+    </div>
+  </div>
+
+  <p class="section-heading">🎯 Goals</p>
+  <ul class="panel-list">
+    <li class="pl-b">Self-host services securely — if an LXC or VM gets compromised, it stays contained</li>
+    <li class="pl-b">Securely remote-access the homelab from anywhere</li>
+    <li class="pl-b">Learn Proxmox, Docker, Linux, networking</li>
+  </ul>
+
+  <p class="section-heading">🖥️ Hardware</p>
+  <ul class="panel-list">
+    <li class="pl-p">Mini PC — 16GB RAM · 256GB SSD</li>
+    <li class="pl-p">Unifi Flex Mini 2.5G Switch</li>
+    <li class="pl-p">Ugreen USB-C to Ethernet Adapter (2.5G)</li>
+    <li class="pl-p">Ugreen USB-to-USB-C Adapter (10Gbps, 3A)</li>
+    <li class="pl-p">5-pack Cable Matters 1ft 10Gbps Cat6 patch cables</li>
+  </ul>
+
+  <p class="section-heading">🔌 Physical Wiring</p>
+  <ol class="docs-ol">
+    <li><strong>WAN:</strong> Cat6 from wall → Mini PC <span class="ic">nic0</span> (vmbr0)</li>
+    <li><strong>LAN:</strong> Mini PC USB port → USB/USB-C adapter → USB-C to Ethernet adapter → Cat6 patch → Port 2 of Flex Mini (vmbr1)</li>
+  </ol>
+
+  <p class="section-heading">🌐 Network Architecture</p>
+  <p class="docs-p">Home gateway is <span class="ic">192.168.X.X</span> (ISP router, DHCP range 192.168.X.x). OPNsense runs as a Proxmox VM with <span class="ic">vmbr0</span> as WAN (<span class="ic">192.168.X.XX/24</span>) and <span class="ic">vmbr1</span> as LAN (<span class="ic">10.0.0.1/24</span>). Proxmox itself sits on <span class="ic">10.0.0.XX</span> with gateway <span class="ic">10.0.0.1</span> — only reachable through the LAN. The OPNsense Tailscale plugin runs as an exit node and advertises every VLAN subnet for remote access.</p>
+
+  <p class="section-heading-sm">Division of labor</p>
+  <div class="docs-cards">
+    <div class="docs-card">
+      <h4>🛡️ OPNsense VM — does all the actual networking</h4>
+      <ul>
+        <li>Creates + enables each VLAN on the <span class="ic">vmbr1</span> parent (Interfaces → Other Types → VLAN)</li>
+        <li>Configures each VLAN interface (subnet, gateway IP, MTU) under Interfaces → Assignments</li>
+        <li>Runs DHCP on every VLAN (advertises AdGuard 10.0.10.XX as DNS)</li>
+        <li>Default gateway for every subnet (.1 of each /24)</li>
+        <li>All firewall rules between VLANs and to/from WAN</li>
+        <li>Forwards LAN DNS → AdGuard, handles NAT for WAN egress</li>
+      </ul>
+    </div>
+    <div class="docs-card">
+      <h4>🖧 Unifi OS Server — dumb-pipe configurator</h4>
+      <ul>
+        <li>Defines the VLAN tag numbers (10 / 20 / 30 / 40) so the switch knows what to forward</li>
+        <li>Port 2 native VLAN = LAN, trunks tags 10/20/30/40 (uplink to OPNsense vmbr1)</li>
+        <li>Assigns access VLAN per remaining port as devices are added</li>
+        <li><strong>Does NOT</strong> do subnets, gateways, DHCP, DNS, firewall, or routing — all OPNsense</li>
+      </ul>
+    </div>
+    <div class="docs-card">
+      <h4>🚫 AdGuard Home — DNS + ad blocking</h4>
+      <ul>
+        <li>DNS resolver for every LXC, VM, and tailnet client</li>
+        <li>Upstream: Quad9 DoH (<span class="ic">https://dns10.quad9.net/dns-query</span>) — malware-blocking endpoint over HTTPS:443</li>
+        <li>Hosts <span class="ic">.homelab</span> URL rewrites</li>
+        <li>OPNsense DHCP and the Tailscale plugin both advertise AdGuard as DNS</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="section-heading">🔀 VLAN Layout</p>
+  <div class="docs-table-wrap">
+    <table class="docs-table">
+      <tr><th>VLAN</th><th>Tag</th><th>Subnet</th><th>DHCP Range</th><th>Purpose</th></tr>
+      <tr><td>LAN</td><td>—</td><td><span class="ic">10.0.0.0/24</span></td><td>10.0.0.50 – 200</td><td>Proxmox host, trusted wired devices</td></tr>
+      <tr><td>mgmt</td><td>10</td><td><span class="ic">10.0.10.0/24</span></td><td>10.0.10.50 – 200</td><td>Proxmox, OPNsense, Unifi OS, AdGuard, Homarr</td></tr>
+      <tr><td>services</td><td>20</td><td><span class="ic">10.0.20.0/24</span></td><td>10.0.20.50 – 200</td><td>Self-hosted services — homelab-site, Jellyfin (planned)</td></tr>
+      <tr><td>automation</td><td>30</td><td><span class="ic">10.0.30.0/24</span></td><td>10.0.30.50 – 200</td><td>agent60 VM</td></tr>
+      <tr><td>iot</td><td>40</td><td><span class="ic">10.0.40.0/24</span></td><td>10.0.40.50 – 200</td><td>IoT / smart home (future)</td></tr>
+    </table>
+  </div>
+  <p class="docs-muted">All DHCP servers advertise <span class="ic">10.0.10.XX</span> (AdGuard) as DNS.</p>
+
+  <p class="section-heading">🛡️ Firewall Rules</p>
+
+  <p class="section-heading-sm">LAN</p>
+  <div class="docs-table-wrap">
+    <table class="docs-table">
+      <tr><th>Action</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Description</th></tr>
+      <tr><td class="a-block">Block</td><td>IPv4 *</td><td>LAN network</td><td>mgmt network</td><td>Block LAN → mgmt</td></tr>
+      <tr><td class="a-block">Block</td><td>IPv4 *</td><td>LAN network</td><td>services network</td><td>Block LAN → services</td></tr>
+      <tr><td class="a-block">Block</td><td>IPv4 *</td><td>LAN network</td><td>automation network</td><td>Block LAN → automation</td></tr>
+      <tr><td class="a-pass">Pass</td><td>IPv4 *</td><td>LAN network</td><td>*</td><td>Allow LAN to internet</td></tr>
+    </table>
+  </div>
+  <p class="docs-muted">LAN devices use OPNsense (<span class="ic">10.0.0.1</span>) for DNS, which forwards to AdGuard internally. Mgmt UIs (Homarr, Proxmox, OPNsense) reached via Tailscale when on LAN or remotely.</p>
+
+  <p class="section-heading-sm">mgmt (VLAN 10)</p>
+  <div class="docs-table-wrap">
+    <table class="docs-table">
+      <tr><th>Action</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Port</th><th>Description</th></tr>
+      <tr><td class="a-pass">Pass</td><td>TCP/UDP</td><td><span class="ic">10.0.10.XX</span></td><td>*</td><td>53</td><td>AdGuard bootstrap DNS — must be first; resolves DoH upstream hostname (dns10.quad9.net) before RFC1918 block</td></tr>
+      <tr><td class="a-pass">Pass</td><td>TCP/UDP</td><td>mgmt network</td><td><span class="ic">10.0.10.XX</span></td><td>53</td><td>DNS to AdGuard (mgmt devices)</td></tr>
+      <tr><td class="a-block">Block</td><td>*</td><td>mgmt network</td><td>RFC1918</td><td>*</td><td>Block all internal nets</td></tr>
+      <tr><td class="a-pass">Pass</td><td>TCP</td><td>mgmt network</td><td>*</td><td>443</td><td>HTTPS — updates, Ubiquiti cloud, Proxmox community repo, AdGuard DoH upstream</td></tr>
+      <tr><td class="a-pass">Pass</td><td>TCP</td><td>mgmt network</td><td>*</td><td>80</td><td>HTTP — apt package repos</td></tr>
+      <tr><td class="a-block">Block</td><td>*</td><td>mgmt network</td><td>*</td><td>*</td><td>Default deny</td></tr>
+    </table>
+  </div>
+
+  <p class="section-heading-sm">services (VLAN 20)</p>
+  <div class="docs-table-wrap">
+    <table class="docs-table">
+      <tr><th>Action</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Port</th><th>Description</th></tr>
+      <tr><td class="a-pass">Pass</td><td>TCP/UDP</td><td>services network</td><td><span class="ic">10.0.10.XX</span></td><td>53</td><td>DNS to AdGuard</td></tr>
+      <tr><td class="a-block">Block</td><td>*</td><td>services network</td><td>RFC1918</td><td>*</td><td>Block lateral access to other internal networks</td></tr>
+      <tr><td class="a-pass">Pass</td><td>TCP</td><td>services network</td><td>*</td><td>443</td><td>HTTPS — updates, Jellyfin metadata (TMDB / TVDB), GitHub SSH-via-443</td></tr>
+      <tr><td class="a-pass">Pass</td><td>TCP</td><td>services network</td><td>*</td><td>80</td><td>HTTP — apt package repos</td></tr>
+      <tr><td class="a-block">Block</td><td>*</td><td>services network</td><td>*</td><td>*</td><td>Deny everything else</td></tr>
+    </table>
+  </div>
+  <p class="docs-muted">Inbound: LAN → services stays blocked. Jellyfin (and any future service) is reached via Tailscale only — the OPNsense Tailscale plugin already advertises <span class="ic">10.0.20.0/24</span> to the tailnet, so tailnet devices have L3 reach without a per-port pass rule.</p>
+
+  <p class="section-heading-sm">automation (VLAN 30)</p>
+  <div class="docs-table-wrap">
+    <table class="docs-table">
+      <tr><th>Action</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Port</th><th>Description</th></tr>
+      <tr><td class="a-pass">Pass</td><td>TCP/UDP</td><td>automation network</td><td><span class="ic">10.0.10.XX</span></td><td>53</td><td>DNS to AdGuard</td></tr>
+      <tr><td class="a-block">Block</td><td>*</td><td>automation network</td><td>RFC1918</td><td>*</td><td>No access to any internal network</td></tr>
+      <tr><td class="a-pass">Pass</td><td>TCP</td><td>automation network</td><td>*</td><td>443</td><td>HTTPS — Anthropic, Notion, Google, Open-Meteo</td></tr>
+      <tr><td class="a-pass">Pass</td><td>TCP</td><td>automation network</td><td>*</td><td>80</td><td>HTTP — apt package repos</td></tr>
+      <tr><td class="a-pass">Pass</td><td>TCP</td><td>automation network</td><td>*</td><td>465</td><td>SMTP SSL — SMTP provider</td></tr>
+      <tr><td class="a-block">Block</td><td>*</td><td>automation network</td><td>*</td><td>*</td><td>Deny everything else</td></tr>
+    </table>
+  </div>
+
+  <p class="section-heading-sm">iot (VLAN 40)</p>
+  <p class="docs-muted">Rules not yet configured — no devices on this VLAN.</p>
+
+  <p class="section-heading-sm">WAN / Tailscale</p>
+  <p class="docs-muted">No inbound rules (default deny). Tailscale subnet routing handled by the OPNsense Tailscale plugin.</p>
+
+  <p class="section-heading">📊 LXC + VM Resources</p>
+  <div class="docs-table-wrap">
+    <table class="docs-table">
+      <tr><th>Service</th><th>Type</th><th>IP(s)</th><th>RAM</th><th>Cores</th><th>VLAN</th></tr>
+      <tr><td>OPNsense</td><td>VM</td><td>WAN 192.168.X.XX · LAN 10.0.0.1 · mgmt 10.0.10.1</td><td>2GiB / 4GiB swap</td><td>4 (1 socket)</td><td>—</td></tr>
+      <tr><td>AdGuard Home</td><td>LXC</td><td>10.0.10.XX</td><td>2GiB / 2GiB swap</td><td>1</td><td>mgmt</td></tr>
+      <tr><td>Unifi OS Server</td><td>LXC</td><td>10.0.10.XX</td><td>4GiB / 512MiB swap</td><td>2</td><td>mgmt</td></tr>
+      <tr><td>Homarr</td><td>LXC</td><td>10.0.10.XX</td><td>2GiB / 512MiB swap</td><td>2</td><td>mgmt</td></tr>
+      <tr><td>homelab-site</td><td>LXC</td><td>10.0.20.XX</td><td>256MiB / 256MiB swap</td><td>1</td><td>services</td></tr>
+      <tr><td>agent60 VM</td><td>VM</td><td>10.0.30.XX</td><td>2GiB / 512MiB swap</td><td>2</td><td>automation</td></tr>
+    </table>
+  </div>
+
+  <p class="section-heading">📦 Service Summary</p>
+  <div class="docs-cards">
+    <div class="docs-card">
+      <h4>🛡️ OPNsense (VM)</h4>
+      <p>Core firewall, router, DHCP, DNS forwarder, NAT. WAN on vmbr0, LAN + VLANs on vmbr1. Tailscale plugin enabled as exit node advertising every VLAN subnet.</p>
+    </div>
+    <div class="docs-card">
+      <h4>🖧 Unifi OS Server (LXC)</h4>
+      <p>Controller for the Flex Mini switch (the switch has no UI of its own). Defines VLAN tag numbers and Port 2 trunk. OPNsense handles all the actual networking.</p>
+    </div>
+    <div class="docs-card">
+      <h4>🚫 AdGuard Home (LXC)</h4>
+      <p>DNS resolver and ad/tracker blocker for every device. Quad9 DoH upstream (<span class="ic">dns10.quad9.net</span> — malware-blocking endpoint). Hosts <span class="ic">.homelab</span> URL rewrites so memorable names work across LAN / VLANs / Tailscale.</p>
+    </div>
+    <div class="docs-card">
+      <h4>📊 Homarr (LXC)</h4>
+      <p>Homelab dashboard — service links and status. Reachable from mgmt VLAN directly or via Tailscale (LAN → mgmt blocked at the firewall). Pending: move to services VLAN.</p>
+    </div>
+    <div class="docs-card">
+      <h4>📖 homelab-site (LXC, services VLAN)</h4>
+      <p>Static nginx serving this very page (<span class="ic">homelab_reorganization.html</span>) at <span class="ic">http://map.homelab</span> for personal viewing. Tailscale-only inbound (LAN → services blocked). Private GitHub repo cloned via SSH using a <strong>read-only deploy key</strong> tunneled over HTTPS:443 (services VLAN doesn't allow :22). Manual <span class="ic">git pull</span> to update. If the LXC is ever compromised, blast radius is read access to this one repo — nothing else.</p>
+    </div>
+    <div class="docs-card">
+      <h4>🤖 agent60 VM (Ubuntu, automation VLAN)</h4>
+      <p>Isolated automation VM — internet-only egress, no internal access. Default user account. Hosts agent60 and the ngrok / webhook auto-deploy stack. Strong random password generated by and stored in a password manager — password-based SSH safe as a fallback alongside the ed25519 key.</p>
+    </div>
+  </div>
+
+  <p class="section-heading">🏷️ .homelab URL Rewrites</p>
+  <p class="docs-p">AdGuard rewrites these hostnames to internal IPs so memorable URLs work from any device on LAN, any VLAN, or Tailscale:</p>
+  <div class="docs-table-wrap">
+    <table class="docs-table">
+      <tr><th>Hostname</th><th>IP</th><th>Service</th></tr>
+      <tr><td><span class="ic">proxmox.homelab</span></td><td>10.0.0.XX</td><td>Proxmox VE</td></tr>
+      <tr><td><span class="ic">opnsense.homelab</span></td><td>10.0.10.1</td><td>OPNsense admin</td></tr>
+      <tr><td><span class="ic">adguard.homelab</span></td><td>10.0.10.XX</td><td>AdGuard Home</td></tr>
+      <tr><td><span class="ic">unifi.homelab</span></td><td>10.0.10.XX</td><td>Unifi OS Server</td></tr>
+      <tr><td><span class="ic">homarr.homelab</span></td><td>10.0.10.XX</td><td>Homarr dashboard</td></tr>
+      <tr><td><span class="ic">map.homelab</span></td><td>10.0.20.XX</td><td>homelab-site LXC (this dashboard)</td></tr>
+      <tr><td><span class="ic">agent.homelab</span></td><td>10.0.30.XX</td><td>agent60 VM (automation)</td></tr>
+    </table>
+  </div>
+
+  <p class="section-heading">📅 agent60</p>
+  <p class="docs-p">Three cron-scheduled scripts on the agent60 VM. VM runs UTC, so cron times are offset to match local time (UTC offset):</p>
+  <ul class="panel-list">
+    <li class="pl-b"><strong>Monday Brief</strong> · <span class="ic">0 10 * * 1</span> = 5:00 AM local · upcoming week's personal calendar + 7-day weather</li>
+    <li class="pl-b"><strong>Daily Brief</strong> · <span class="ic">0 10 * * 2-7</span> = 5:00 AM local Tue–Sun · today's calendar + weather + outfit tip</li>
+    <li class="pl-g"><strong>Friday Report</strong> · <span class="ic">0 23 * * 5</span> = 6:00 PM local · weekly wrap-up of online coding class notes transcribed in Notion</li>
+  </ul>
+  <p class="docs-p">Each script runs Claude CLI headless (<span class="ic">claude -p</span>), queries MCP connectors (Notion / Google Calendar) plus Open-Meteo via WebFetch, fills an HTML email template, and sends via msmtp to SMTP provider (<span class="ic">smtp.example.com:465</span>, implicit TLS).</p>
+  <p class="docs-muted">See the <strong>agent60</strong> tab for the full pipeline and auto-deploy flow diagram.</p>
+
+  <p class="section-heading">🔐 GitHub SSH (on agent60 VM)</p>
+  <ul class="panel-list">
+    <li class="pl-g">SSH key <span class="ic">~/.ssh/id_ed25519</span> (ed25519, no passphrase) — added to a GitHub account</li>
+    <li class="pl-y">Automation VLAN only allows port 443 outbound, not 22 — SSH routes via <span class="ic">ssh.github.com:443</span> in <span class="ic">~/.ssh/config</span></li>
+    <li class="pl-g"><span class="ic">keychain</span> installed — SSH agent auto-starts on login; silent <span class="ic">git pull</span> with no passphrase prompt</li>
+  </ul>
+
+  <p class="section-heading">🪝 Auto-Deploy (GitHub Webhook + ngrok)</p>
+  <p class="docs-p">Two systemd services on the agent60 VM, both enabled and auto-starting on boot. Pulls latest code to <span class="ic">/opt/agent60</span> on every push to <span class="ic">main</span>:</p>
+  <div class="docs-cards">
+    <div class="docs-card">
+      <h4>webhook.service</h4>
+      <p>Node.js HTTP server at <span class="ic">localhost:3000</span> (<span class="ic">/opt/webhook/index.js</span>). Verifies HMAC-SHA256 signature, then runs <span class="ic">git -C /opt/agent60 pull</span>. 5s execSync timeout. Per-IP 5s rate limit (429 on repeats). Logs to journald.</p>
+    </div>
+    <div class="docs-card">
+      <h4>ngrok.service</h4>
+      <p>Exposes localhost:3000 via a static <span class="ic">ngrok-free.app</span> domain over HTTPS. Config at <span class="ic">~/.config/ngrok/ngrok.yml</span> (chmod 600). Outbound on port 443 — the only port allowed off VLAN 30.</p>
+    </div>
+  </div>
+  <p class="docs-muted">GitHub webhook payload URL: <span class="ic">https://&lt;static-domain&gt;.ngrok-free.app/webhook</span> · content-type JSON · push events only · HMAC secret matches <span class="ic">SECRET</span> in <span class="ic">index.js</span>.</p>
+
+  <p class="section-heading">🔒 Security Hardening</p>
+  <p class="section-heading-sm">Completed</p>
+  <ul class="panel-list">
+    <li class="pl-g">2FA on Proxmox (TOTP) — Datacenter → Users → Edit</li>
+    <li class="pl-g">2FA on OPNsense (TOTP) — System → Access → Users</li>
+    <li class="pl-g">Secret file permissions tightened on agent60 VM
+      <div class="docs-codelist">
+        <span class="path">/opt/agent60/.env</span>          <span class="mode">chmod 600</span>
+        <span class="path">/opt/agent60/.msmtprc</span>      <span class="mode">chmod 600</span>
+        <span class="path">~/.config/ngrok/ngrok.yml</span>       <span class="mode">chmod 600</span>
+        <span class="path">/opt/webhook/index.js</span>           <span class="mode">chmod 640</span>
+      </div>
+    </li>
+    <li class="pl-g">Webhook <span class="ic">execSync</span> 5s timeout — prevents hanging git pull from blocking listener</li>
+    <li class="pl-g">Webhook per-IP rate limiting — 5s cooldown, 429 on repeats</li>
+    <li class="pl-g">agent60 LXC → VM migration — stronger kernel-level isolation; webhook + ngrok services carried over</li>
+    <li class="pl-g">Dedicated SMTP provider account for agent60 — isolated from personal email</li>
+    <li class="pl-g">VLAN segmentation — automation VLAN internet-only, no internal access</li>
+    <li class="pl-g">Proxmox management off WAN — host only reachable via internal LAN (10.0.0.XX)</li>
+    <li class="pl-g">Default deny on WAN + Tailscale — no inbound rules on either</li>
+    <li class="pl-g">IPv6 disabled on agent60 VM — prevents msmtp routing issues on IPv4-only VLAN</li>
+    <li class="pl-g"><strong>Strong randomized password for agent60 VM</strong> — password-manager-generated long random string on the default user account, stored in the same vault. Makes password-based SSH safe as a fallback alongside the ed25519 key.</li>
+    <li class="pl-g"><strong>Read-only deploy key for <span class="ic">homelab-site</span> repo clone</strong> — ed25519 key generated on the LXC and added to the GitHub repo under Settings → Deploy keys with <strong>"Allow write access" unchecked</strong>. Repo-scoped (not tied to my user account), pull-only, easy to revoke independently. If the LXC is ever compromised the attacker only gets read access to this one repo — no push, no other repos, no account-wide blast radius.</li>
+    <li class="pl-g"><strong>Proxmox host firewall enabled</strong> — Datacenter → Firewall turned on as a second layer beyond OPNsense, so the Proxmox host itself filters traffic regardless of what's happening inside the guest network — 2026-05-17.</li>
+  </ul>
+  <p class="section-heading-sm">Pending</p>
+  <ul class="panel-list">
+    <li class="pl-y">Tailscale ACLs — restrict which devices can reach which subnets</li>
+    <li class="pl-y">Move Homarr to services VLAN (currently on mgmt)</li>
+  </ul>
+
+  <p class="section-heading">📚 See Also</p>
+  <ul class="panel-list">
+    <li class="pl-b"><strong class="tab-link" data-tab="topology">Topology</strong> — interactive node map; click any node or VLAN chip for full detail + connections</li>
+    <li class="pl-b"><strong class="tab-link" data-tab="vlans">VLANs</strong> — per-VLAN cards with assigned devices and firewall rules at a glance</li>
+    <li class="pl-b"><strong class="tab-link" data-tab="agent60">agent60</strong> — cron schedule + report and auto-deploy pipeline diagrams</li>
+    <li class="pl-b"><strong class="tab-link" data-tab="troubleshooting">Troubleshooting</strong> — common issues and fixes (AppArmor, IPv6, cron PATH, etc.)</li>
+  </ul>
+
+</section>
+
+</main>
+
+<!-- ── DETAIL PANEL ── -->
+<div id="detail-panel">
+  <div class="panel-head">
+    <span class="panel-ico" id="p-ico">🖥️</span>
+    <div class="panel-meta">
+      <h2 id="p-name">–</h2>
+      <span class="panel-type" id="p-type">–</span>
+    </div>
+    <button class="panel-close" id="panel-close">✕</button>
+  </div>
+  <div class="panel-body" id="p-body"></div>
+</div>
+
+<script>
+// ── Tab switching ────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'topology') requestAnimationFrame(() => setTimeout(drawConns, 60));
+  });
+});
+document.querySelectorAll('.tab-link').forEach(link => {
+  link.addEventListener('click', () => {
+    const target = document.querySelector('.tab-btn[data-tab="' + link.dataset.tab + '"]');
+    if (!target) return;
+    target.click();
+    requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
+  });
+});
+
+// ── Accordions ───────────────────────────────────────────────
+document.querySelectorAll('.acc-trigger').forEach(t => {
+  t.addEventListener('click', () => {
+    const body = t.nextElementSibling;
+    const wasOpen = body.classList.contains('open');
+    t.closest('.accordion').querySelectorAll('.acc-body').forEach(b => b.classList.remove('open'));
+    t.closest('.accordion').querySelectorAll('.acc-trigger').forEach(x => x.classList.remove('open'));
+    if (!wasOpen) { body.classList.add('open'); t.classList.add('open'); }
+  });
+});
+
+// ── Connection metadata ───────────────────────────────────────
+const NODE_NAMES = {
+  'n-tailscale':  { name: 'Tailscale',          ico: '🔒' },
+  'n-github':     { name: 'GitHub',              ico: '⑂'  },
+  'n-anthropic':  { name: 'Anthropic',           ico: '🤖' },
+  'n-openmeteo':  { name: 'Open-Meteo',          ico: '🌤' },
+  'n-zoho':       { name: 'SMTP provider',           ico: '📧' },
+  'n-router':     { name: 'ISP Router',          ico: '📡' },
+  'n-switch':     { name: 'Unifi Flex Mini',     ico: '🔀' },
+  'n-opnsense':   { name: 'OPNsense VM',         ico: '🛡️' },
+  'n-adguard':    { name: 'AdGuard Home',        ico: '🚫' },
+  'n-unifi-os':   { name: 'Unifi OS Server',     ico: '🖧'  },
+  'n-homarr':     { name: 'Homarr',             ico: '📊' },
+  'n-jellyfin':   { name: 'Jellyfin',            ico: '🎬' },
+  'n-homelab-site': { name: 'homelab-site',      ico: '📖' },
+  'n-reports':    { name: 'Cron Reports',        ico: '📅' },
+  'n-claude-cli': { name: 'Claude CLI',          ico: '💬' },
+  'n-msmtp':      { name: 'msmtp',              ico: '📤' },
+  'n-ngrok':      { name: 'ngrok',              ico: '🌐' },
+  'n-webhook':    { name: 'webhook.service',     ico: '🪝' },
+};
+
+const CLS_META = {
+  'cl-phys': { color: 'var(--purple)', label: 'Physical' },
+  'cl-net':  { color: 'var(--blue)',   label: 'Network'  },
+  'cl-dns':  { color: 'var(--green)',  label: 'DNS'      },
+  'cl-data': { color: 'var(--teal)',   label: 'Data/API' },
+  'cl-mgmt': { color: '#c0c0c0',      label: 'Mgmt'     },
+  'cl-dep':  { color: 'var(--yellow)','label': 'Deploy'  },
+};
+
+// Which subnet(s) each node participates in — used to light up the matching
+// VLAN chips below OPNsense when a node is selected.
+const ALL_VLANS = ['lan','v10','v20','v30','v40'];
+const NODE_VLAN = {
+  'n-router':     [],            // upstream WAN, not on any internal subnet
+  'n-switch':     ALL_VLANS,     // Port 2 trunks LAN + tagged VLAN 10/20/30/40
+  'n-opnsense':   ALL_VLANS,     // gateway / DHCP / firewall for every subnet
+  'n-tailscale':  ALL_VLANS,     // advertises every subnet to the tailnet
+  'n-adguard':    ['v10'],
+  'n-unifi-os':   ['v10'],
+  'n-homarr':     ['v10'],
+  'n-jellyfin':   ['v20'],
+  'n-homelab-site': ['v20'],
+  'n-reports':    ['v30'],
+  'n-claude-cli': ['v30'],
+  'n-msmtp':      ['v30'],
+  'n-ngrok':      ['v30'],
+  'n-webhook':    ['v30'],
+  // external SaaS (github, anthropic, openmeteo, zoho) — no internal VLAN
+};
+
+// ── Node detail data ─────────────────────────────────────────
+const ND = {
+  tailscale: {
+    ico: '🔒', name: 'Tailscale', type: 'External Service',
+    s: [
+      { h: 'Role', kv: [['Purpose','Secure remote access VPN'],['Mode','OPNsense as exit node (Tailscale plugin)'],['Advertises','ALL subnets — LAN + VLAN 10/20/30/40']] },
+      { h: 'Subnets advertised', kv: [
+        ['LAN',          '10.0.0.0/24'],
+        ['VLAN 10 mgmt', '10.0.10.0/24'],
+        ['VLAN 20 svc',  '10.0.20.0/24'],
+        ['VLAN 30 auto', '10.0.30.0/24'],
+        ['VLAN 40 iot',  '10.0.40.0/24'],
+      ]},
+      { h: 'Reachable services', li: [
+        {t:'Proxmox VE — proxmox.homelab (10.0.0.XX:8006)',c:'pl-b'},
+        {t:'OPNsense admin — opnsense.homelab (10.0.10.1)',c:'pl-b'},
+        {t:'AdGuard Home — adguard.homelab (10.0.10.XX)',c:'pl-b'},
+        {t:'Unifi OS Server — unifi.homelab (10.0.10.XX)',c:'pl-b'},
+        {t:'Homarr dashboard — homarr.homelab (10.0.10.XX)',c:'pl-b'},
+        {t:'homelab-site (this page) — map.homelab (10.0.20.XX)',c:'pl-b'},
+        {t:'agent60 VM (automation) — agent.homelab (10.0.30.XX)',c:'pl-b'},
+        {t:'Jellyfin VM (planned) and any future services on VLAN 20',c:'pl-b'},
+        {t:'IoT devices (future) on VLAN 40',c:'pl-b'},
+      ]},
+      { h: 'Notes', li: [
+        {t:'OPNsense Tailscale plugin pushes AdGuard (10.0.10.XX) as DNS to tailnet clients — so .homelab URLs work remotely too',c:'pl-g'},
+        {t:'No inbound rules on WAN or Tailscale interface (default deny)',c:'pl-g'},
+        {t:'Effectively: anyone on the tailnet has full L3 reach to every subnet',c:'pl-y'},
+        {t:'Pending: Tailscale ACLs to restrict which devices reach which subnets',c:'pl-y'},
+      ]},
+    ]
+  },
+  'vlan-lan': {
+    ico: '🏠', name: 'LAN', type: 'Native subnet · untagged',
+    s: [
+      { h: 'Network', kv: [
+        ['Subnet',     '10.0.0.0/24'],
+        ['Gateway',    '10.0.0.1  (OPNsense vmbr1)'],
+        ['DHCP range', '10.0.0.50 – 10.0.0.200'],
+        ['Tag',        'untagged (native)'],
+      ]},
+      { h: 'Also lives here', li: [
+        {t:'Proxmox VE host — 10.0.0.XX',c:'pl-b'},
+        {t:'Trusted wired DHCP devices (10.0.0.50–200)',c:'pl-b'},
+      ]},
+      { h: 'Firewall — egress rules', li: [
+        {t:'Block → mgmt VLAN',c:'pl-r'},
+        {t:'Block → services VLAN',c:'pl-r'},
+        {t:'Block → automation VLAN',c:'pl-r'},
+        {t:'Pass → internet (WAN)',c:'pl-g'},
+      ]},
+      { h: 'DNS', li: [
+        {t:'Resolves via OPNsense (10.0.0.1) → forwards to AdGuard internally',c:'pl-b'},
+      ]},
+      { h: 'Switch', li: [
+        {t:'Untagged frames on Flex Mini Port 2 land on this VLAN',c:'pl-b'},
+      ]},
+    ]
+  },
+  'vlan-v10': {
+    ico: '⚙️', name: 'VLAN 10 — mgmt', type: 'Management plane · tag 10',
+    s: [
+      { h: 'Network', kv: [
+        ['Subnet',     '10.0.10.0/24'],
+        ['Gateway',    '10.0.10.1  (OPNsense)'],
+        ['DHCP range', '10.0.10.50 – 10.0.10.200'],
+        ['Tag',        '10'],
+      ]},
+      { h: 'Firewall — egress rules', li: [
+        {t:'Pass :53 → AdGuard (DNS)',c:'pl-g'},
+        {t:'Block → all other RFC1918',c:'pl-r'},
+        {t:'Pass → WAN (updates, APIs)',c:'pl-g'},
+      ]},
+      { h: 'Access', li: [
+        {t:'LAN → mgmt is blocked — reach via Tailscale',c:'pl-y'},
+        {t:'OPNsense advertises 10.0.10.0/24 over Tailscale subnet route',c:'pl-b'},
+      ]},
+    ]
+  },
+  'vlan-v20': {
+    ico: '🎬', name: 'VLAN 20 — services', type: 'Self-hosted services · tag 20',
+    s: [
+      { h: 'Network', kv: [
+        ['Subnet',     '10.0.20.0/24'],
+        ['Gateway',    '10.0.20.1  (OPNsense)'],
+        ['DHCP range', '10.0.20.50 – 10.0.20.200'],
+        ['Tag',        '20'],
+      ]},
+      { h: 'Devices', li: [
+        {t:'homelab-site LXC — 10.0.20.XX · nginx serving this dashboard at http://map.homelab (tailscale-only inbound)',c:'pl-b'},
+        {t:'Jellyfin VM (planned) — 10.0.20.x · media server, tailscale-only inbound',c:'pl-b'},
+        {t:'Pending: move Homarr here (currently on mgmt)',c:'pl-y'},
+      ]},
+      { h: 'Egress firewall (OPNsense top-down)', li: [
+        {t:'Pass → AdGuard 10.0.10.XX :53 (DNS — specific allow before RFC1918 block)',c:'pl-g'},
+        {t:'Block → RFC1918 (no lateral access to LAN / mgmt / automation / iot)',c:'pl-r'},
+        {t:'Pass → * :443 (HTTPS — updates, Jellyfin metadata TMDB/TVDB, GitHub SSH-via-443)',c:'pl-g'},
+        {t:'Pass → * :80 (HTTP — apt repos)',c:'pl-g'},
+        {t:'Default deny everything else',c:'pl-r'},
+      ]},
+      { h: 'Inbound model', li: [
+        {t:'LAN → services: BLOCKED (intentional)',c:'pl-r'},
+        {t:'Tailscale → services: allowed via L3 subnet routing — OPNsense Tailscale plugin advertises 10.0.20.0/24 to the tailnet, so tailnet devices reach Jellyfin on any port without a per-port pass rule',c:'pl-b'},
+        {t:'No port-forwards, no public exposure',c:'pl-g'},
+      ]},
+    ]
+  },
+  'vlan-v30': {
+    ico: '🤖', name: 'VLAN 30 — automation', type: 'Automation · tag 30 · internet-only',
+    s: [
+      { h: 'Network', kv: [
+        ['Subnet',     '10.0.30.0/24'],
+        ['Gateway',    '10.0.30.1  (OPNsense)'],
+        ['DHCP range', '10.0.30.50 – 10.0.30.200'],
+        ['Tag',        '30'],
+      ]},
+      { h: 'Host VM', li: [
+        {t:'agent60 VM — Ubuntu (default user) — 10.0.30.XX (DHCP reserved)',c:'pl-r'},
+        {t:'Hosts agent60 (reports → Claude CLI → msmtp) and auto-deploy (ngrok + webhook)',c:'pl-b'},
+        {t:'Strong random password (password-manager-generated, stored in the same vault) — password SSH safe alongside ed25519 key',c:'pl-g'},
+      ]},
+      { h: 'Firewall — egress rules', li: [
+        {t:'Pass :53 → AdGuard (DNS only)',c:'pl-g'},
+        {t:'Block → all RFC1918 (no internal network access)',c:'pl-r'},
+        {t:'Pass :443 → WAN (Claude, Notion, GCal, Open-Meteo)',c:'pl-g'},
+        {t:'Pass :80 → WAN (apt repos)',c:'pl-g'},
+        {t:'Pass :465 → WAN (SMTP/SSL · SMTP provider)',c:'pl-g'},
+        {t:'Block * default — deny everything else',c:'pl-r'},
+      ]},
+      { h: 'Notes', li: [
+        {t:'IPv6 disabled — msmtp would otherwise resolve IPv6 first and hang',c:'pl-y'},
+        {t:'Reachable via Tailscale (subnet route advertised by OPNsense)',c:'pl-b'},
+      ]},
+    ]
+  },
+  'vlan-v40': {
+    ico: '💡', name: 'VLAN 40 — iot', type: 'IoT / smart home · tag 40',
+    s: [
+      { h: 'Network', kv: [
+        ['Subnet',     '10.0.40.0/24'],
+        ['Gateway',    '10.0.40.1  (OPNsense)'],
+        ['DHCP range', '10.0.40.50 – 10.0.40.200'],
+        ['Tag',        '40'],
+      ]},
+      { h: 'Status', li: [
+        {t:'No devices yet — VLAN defined but unused',c:'pl-y'},
+        {t:'Firewall rules not yet configured',c:'pl-y'},
+        {t:'Reserved for smart home / IoT devices',c:'pl-b'},
+      ]},
+    ]
+  },
+  github: {
+    ico: '⑂', name: 'GitHub', type: 'External Service',
+    s: [
+      { h: 'Repository', kv: [['Repo','<user>/agent60'],['Branch','main'],['Deploy target','/opt/agent60 on agent60 VM']] },
+      { h: 'Webhook', kv: [['Event','push only'],['Content-Type','application/json'],['Auth','HMAC-SHA256'],['URL','<static>.ngrok-free.app/webhook']] },
+      { h: 'SSH Config', li: [{t:'Key: ~/.ssh/id_ed25519 (ed25519)',c:'pl-g'},{t:'Routes via ssh.github.com:443 (port 22 blocked on VLAN 30)',c:'pl-y'},{t:'keychain auto-starts SSH agent on login',c:'pl-g'}] },
+    ]
+  },
+  anthropic: {
+    ico: '🤖', name: 'Anthropic', type: 'External Service',
+    s: [
+      { h: 'Claude API', kv: [['Access','claude login session (no separate key)'],['Mode','claude -p headless in shell scripts'],['Port','443 (HTTPS)']] },
+      { h: 'MCP Connectors', li: [{t:'Notion — online coding class notes are transcribed and stored here (Friday report)',c:'pl-p'},{t:'Google Calendar — events (Monday + daily briefs)',c:'pl-b'},{t:'Configured at claude.ai/connectors',c:'pl-g'}] },
+    ]
+  },
+  openmeteo: {
+    ico: '🌤', name: 'Open-Meteo', type: 'External API',
+    s: [
+      { h: 'Usage', kv: [['Used by','Monday Brief, Daily Brief'],['Tool','WebFetch via Claude CLI'],['Port','443 (HTTPS)'],['Auth','None — free public API']] },
+      { h: 'Data', li: [{t:'7-day forecast (Monday Brief)',c:'pl-b'},{t:"Today's weather + outfit tip (Daily Brief)",c:'pl-b'}] },
+    ]
+  },
+  zoho: {
+    ico: '📧', name: 'SMTP provider', type: 'External Service',
+    s: [
+      { h: 'SMTP Config', kv: [['Host','smtp.example.com'],['Port','465 (implicit TLS)'],['Auth','App password'],['Client','msmtp  (~/.msmtprc  chmod 600)']] },
+      { h: 'Notes', li: [{t:'SMTP access must be enabled in SMTP provider settings (off by default)',c:'pl-y'},{t:'Dedicated SMTP provider account — isolated from personal email',c:'pl-g'},{t:'tls_starttls off — implicit TLS on port 465',c:'pl-b'}] },
+    ]
+  },
+  router: {
+    ico: '📡', name: 'ISP Router', type: 'Home Network',
+    s: [
+      { h: 'Network', kv: [['IP','192.168.X.X'],['Subnet','192.168.X.0/24'],['DHCP range','192.168.X.x']] },
+      { h: 'Connections', li: [{t:'Cat6 from wall → Mini PC nic0 (vmbr0) — physical WAN to OPNsense',c:'pl-p'},{t:'OPNsense WAN IP: 192.168.X.XX',c:'pl-g'}] },
+    ]
+  },
+  switch: {
+    ico: '🔀', name: 'Unifi Flex Mini 2.5G', type: 'Standalone Managed Switch',
+    s: [
+      { h: 'Device', kv: [
+        ['IP','10.0.10.87  (mgmt VLAN)'],
+        ['Form factor','External — sits beside the Mini PC'],
+        ['Managed by','Unifi OS Server LXC (10.0.10.XX)'],
+      ]},
+      { h: 'Uplink', kv: [['Port 2 (trunk)','Mini PC USB → USB-C NIC → Cat6 (vmbr1)']] },
+      { h: 'Configuration', li: [
+        {t:'Port 2 native (untagged) VLAN = LAN 10.0.0.0/24',c:'pl-b'},
+        {t:'Port 2 trunks VLAN tags 10/20/30/40 on top — uplink to OPNsense vmbr1',c:'pl-b'},
+        {t:'VLAN tags defined in Unifi OS Server',c:'pl-b'},
+        {t:'Other ports assigned access VLANs per-device',c:'pl-b'},
+      ]},
+      { h: 'Notes', li: [{t:'Mgmt interface IP (10.0.10.87) lives on the mgmt VLAN even though the switch chassis is wired to the Mini PC via USB-C',c:'pl-y'},{t:'WAN cable does NOT pass through this switch — it goes wall → Mini PC nic0 directly',c:'pl-y'}] },
+    ]
+  },
+  opnsense: {
+    ico: '🛡️', name: 'OPNsense VM', type: 'VM — Firewall & Router · runs the whole network',
+    s: [
+      { h: 'Resources', kv: [['Cores','4 (1 socket)'],['RAM','2GB / 4GB swap'],['2FA','TOTP enabled']] },
+      { h: 'Interfaces', kv: [['WAN','192.168.X.XX/24  (vmbr0)'],['LAN','10.0.0.1/24  (vmbr1)'],['mgmt VLAN','10.0.10.1  (tag 10)']] },
+      { h: 'Subnets', kv: [
+        ['LAN',          '10.0.0.0/24  ·  DHCP 10.0.0.50–200'],
+        ['VLAN 10  mgmt','10.0.10.0/24  ·  DHCP 10.0.10.50–200'],
+        ['VLAN 20  svc', '10.0.20.0/24  ·  DHCP 10.0.20.50–200'],
+        ['VLAN 30  auto','10.0.30.0/24  ·  DHCP 10.0.30.50–200'],
+        ['VLAN 40  iot', '10.0.40.0/24  ·  DHCP 10.0.40.50–200'],
+      ]},
+      { h: 'Does all the actual networking work', li: [
+        {t:'Creates + enables each VLAN on the vmbr1 parent interface (Interfaces → Other Types → VLAN)',c:'pl-g'},
+        {t:'Configures each VLAN interface — subnet, gateway IP, MTU — under Interfaces → Assignments',c:'pl-g'},
+        {t:'Runs DHCP on every VLAN (advertises AdGuard 10.0.10.XX as DNS)',c:'pl-b'},
+        {t:'Acts as default gateway for every subnet (.1 of each /24)',c:'pl-b'},
+        {t:'Enforces all firewall rules between VLANs and to/from WAN',c:'pl-b'},
+        {t:'Forwards LAN DNS → AdGuard; handles NAT for WAN egress',c:'pl-b'},
+      ]},
+      { h: 'Plugins / extras', li: [
+        {t:'Tailscale plugin — exit node, advertises every VLAN subnet',c:'pl-g'},
+        {t:'Proxmox host firewall enabled (Datacenter → Firewall) as a second layer beyond OPNsense — 2026-05-17',c:'pl-g'},
+      ]},
+    ]
+  },
+  adguard: {
+    ico: '🚫', name: 'AdGuard Home', type: 'LXC — mgmt VLAN',
+    s: [
+      { h: 'Resources', kv: [['IP','10.0.10.XX'],['Cores','1'],['RAM','2GB / 2GB swap'],['VLAN','mgmt (tag 10)']] },
+      { h: 'DNS', kv: [['Listens on','10.0.10.XX:53'],['Upstream','https://dns10.quad9.net/dns-query (Quad9 DoH, malware-blocking)'],['Used by','Every LXC + VM + Tailscale client — OPNsense DHCP and Tailscale plugin both advertise 10.0.10.XX as DNS']] },
+      { h: 'DNS rewrites — .homelab URLs', kv: [
+        ['proxmox.homelab', '10.0.0.XX'],
+        ['opnsense.homelab','10.0.10.1'],
+        ['adguard.homelab', '10.0.10.XX'],
+        ['unifi.homelab',   '10.0.10.XX'],
+        ['homarr.homelab',  '10.0.10.XX'],
+        ['map.homelab', '10.0.20.XX  (homelab-site LXC — this dashboard)'],
+        ['agent.homelab',     '10.0.30.XX'],
+      ]},
+      { h: 'Notes', li: [
+        {t:'Network-wide ad and tracker blocking',c:'pl-g'},
+        {t:'Local .homelab names work from LAN, any VLAN, and Tailscale — no IPs to memorize',c:'pl-g'},
+        {t:'LAN devices reach it via OPNsense DNS forwarding; VLAN + tailnet devices query AdGuard directly',c:'pl-b'},
+      ]},
+    ]
+  },
+  'unifi-os': {
+    ico: '🖧', name: 'Unifi OS Server', type: 'LXC — mgmt VLAN · dumb-pipe configurator',
+    s: [
+      { h: 'Resources', kv: [['IP','10.0.10.XX'],['Cores','2'],['RAM','4GB / 512MB swap'],['VLAN','mgmt (tag 10)']] },
+      { h: 'All it does', li: [
+        {t:'Defines the VLAN tag numbers (10 / 20 / 30 / 40) so the switch knows what to forward',c:'pl-b'},
+        {t:'Sets Port 2 native VLAN = LAN 10.0.0.0/24 (untagged) + trunks tags 10/20/30/40 — uplink to OPNsense vmbr1',c:'pl-b'},
+        {t:'Assigns access VLAN per remaining port as devices are added',c:'pl-b'},
+      ]},
+      { h: 'Does NOT do', li: [
+        {t:'Subnets, gateways, DHCP, DNS, firewall, routing — all of that is OPNsense',c:'pl-y'},
+        {t:'Without OPNsense, these tags would be meaningless labels',c:'pl-y'},
+      ]},
+      { h: 'Notes', li: [{t:'Controller overrides the switch management interface from LAN to mgmt VLAN',c:'pl-y'},{t:'Just needs the matching tag list so the switch does not drop frames in transit',c:'pl-b'}] },
+    ]
+  },
+  homarr: {
+    ico: '📊', name: 'Homarr', type: 'LXC — mgmt VLAN',
+    s: [
+      { h: 'Resources', kv: [['IP','10.0.10.XX'],['Cores','2'],['RAM','2GB / 512MB swap'],['VLAN','mgmt (tag 10)']] },
+      { h: 'Access', li: [
+        {t:'Reachable from mgmt VLAN directly, or via Tailscale from anywhere (OPNsense advertises 10.0.10.0/24)',c:'pl-b'},
+        {t:'NOT reachable from LAN — LAN → mgmt blocked at firewall',c:'pl-y'},
+        {t:'Homelab dashboard — service links and status',c:'pl-b'},
+        {t:'Pending: move to services VLAN (currently on mgmt)',c:'pl-y'},
+      ]},
+    ]
+  },
+  'homelab-site': {
+    ico: '📖', name: 'homelab-site', type: 'LXC — services VLAN',
+    s: [
+      { h: 'Resources', kv: [
+        ['IP', '10.0.20.XX (DHCP reserved)'],
+        ['Cores', '1'],
+        ['RAM', '256MB / 256MB swap'],
+        ['Disk', '4GB'],
+        ['OS', 'Debian 12'],
+        ['VLAN', 'services (tag 20)'],
+      ]},
+      { h: 'Role', li: [
+        {t:'nginx serves /opt/homelab-site/homelab_reorganization.html as the directory index',c:'pl-b'},
+        {t:'Accessed at http://map.homelab (AdGuard rewrite → 10.0.20.XX) — no port, no path suffix',c:'pl-b'},
+        {t:'Self-hosted, always-current copy of these homelab docs — for personal viewing only',c:'pl-b'},
+      ]},
+      { h: 'Access', li: [
+        {t:'Tailscale-only inbound — LAN → services blocked at firewall',c:'pl-g'},
+        {t:'OPNsense Tailscale plugin advertises 10.0.20.0/24 to the tailnet, so tailnet devices have L3 reach without a per-port pass rule',c:'pl-b'},
+        {t:'No port-forward, no public DNS, no public exposure of any kind',c:'pl-g'},
+      ]},
+      { h: 'Repo & deploy', li: [
+        {t:'Private GitHub repo cloned via SSH using a read-only deploy key (repo-scoped, not tied to user account)',c:'pl-g'},
+        {t:'Deploy key added under repo Settings → Deploy keys with "Allow write access" UNCHECKED — pull-only',c:'pl-g'},
+        {t:'SSH tunneled through HTTPS:443 (Host github.com → ssh.github.com:443) because services VLAN only allows :443 outbound, not :22',c:'pl-b'},
+        {t:'Manual update: ssh root@10.0.20.XX then cd /opt/homelab-site && git pull. nginx serves new file on next request — no reload needed',c:'pl-b'},
+      ]},
+      { h: 'Blast radius if compromised', li: [
+        {t:'Attacker only gets read access to one repo via the deploy key — no write, no other repos, no user-account scope',c:'pl-g'},
+        {t:'No Anthropic / SMTP / agent60 credentials on this LXC — those live on the isolated automation VM',c:'pl-g'},
+        {t:'Cannot pivot to other internal subnets — services VLAN egress firewall blocks RFC1918',c:'pl-g'},
+      ]},
+    ]
+  },
+  jellyfin: {
+    ico: '🎬', name: 'Jellyfin', type: 'VM — services VLAN (planned)',
+    s: [
+      { h: 'Resources (planned)', kv: [['IP','10.0.20.x (DHCP reserved)'],['VLAN','services (tag 20)'],['Media','Local to VM — no NAS / SMB / NFS reach required']] },
+      { h: 'Firewall posture', li: [
+        {t:'LAN → services blocked — Jellyfin is NOT reachable from LAN directly',c:'pl-y'},
+        {t:'Reachable only via Tailscale — OPNsense Tailscale plugin advertises 10.0.20.0/24 to the tailnet, so any tailnet device has L3 reach',c:'pl-b'},
+        {t:'Outbound: DNS to AdGuard, HTTPS/HTTP for updates + TMDB/TVDB metadata, nothing else',c:'pl-g'},
+        {t:'No port-forward, no inbound rule needed — tailnet routing handles it',c:'pl-g'},
+      ]},
+      { h: 'Setup notes', li: [
+        {t:'Bind on 0.0.0.0 (default) — Tailscale traffic enters via OPNsense, treated as services-VLAN ingress',c:'pl-b'},
+        {t:'Add AdGuard rewrite jellyfin.homelab → 10.0.20.x for a memorable URL across LAN/VLANs/Tailscale',c:'pl-b'},
+        {t:'Plain HTTP on :8096 is fine for tailnet-only access; TLS only needed if exposing publicly',c:'pl-b'},
+      ]},
+    ]
+  },
+  reports: {
+    ico: '📅', name: 'Cron Reports', type: 'Service — agent60',
+    s: [
+      { h: 'Schedule (UTC offsets for local = UTC offset)', kv: [['Friday Report','0 23 * * 5 → 6:00 PM local'],['Monday Brief','0 10 * * 1 → 5:00 AM local'],['Daily Brief','0 10 * * 2-7 → 5:00 AM local']] },
+      { h: 'Data Sources', li: [{t:'Friday: online coding class notes transcribed in Notion · pulled via Notion MCP',c:'pl-p'},{t:'Monday: Google Calendar events + 7-day weather',c:'pl-b'},{t:"Daily: Today's calendar + weather + outfit tip",c:'pl-b'}] },
+    ]
+  },
+  'claude-cli': {
+    ico: '💬', name: 'Claude Code CLI', type: 'Service — agent60',
+    s: [
+      { h: 'Runtime', kv: [['Binary','/home/user/.local/bin/claude'],['Mode','claude -p  headless'],['Install','npm install -g @anthropic-ai/claude-code'],['Auth','claude login session  (~/.claude/)']] },
+      { h: 'Tasks', li: [{t:'Query MCP connectors (Notion, Google Calendar)',c:'pl-b'},{t:'Fetch weather via WebFetch (Open-Meteo)',c:'pl-b'},{t:'Fill HTML email template with AI-generated content',c:'pl-g'}] },
+    ]
+  },
+  msmtp: {
+    ico: '📤', name: 'msmtp', type: 'Service — agent60',
+    s: [
+      { h: 'Config', kv: [
+        ['msmtp config','~/.msmtprc  (chmod 600)'],
+        ['Email config','/opt/agent60/.env  — SMTP_FROM, REPORT_TO_EMAIL (chmod 600)'],
+        ['Host','smtp.example.com:465'],
+        ['TLS','Implicit (tls_starttls off)'],
+        ['Auth','App password'],
+      ]},
+      { h: 'Notes', li: [{t:'AppArmor requires config at ~/.msmtprc (not inside repo)',c:'pl-y'},{t:'IPv6 disabled on agent60 to prevent connection hangs',c:'pl-y'},{t:'Dedicated SMTP provider account — isolated from personal email',c:'pl-g'}] },
+    ]
+  },
+  ngrok: {
+    ico: '🌐', name: 'ngrok', type: 'Service — auto-deploy',
+    s: [
+      { h: 'Config', kv: [['Service','ngrok.service (systemd, auto-start)'],['Tunnel','localhost:3000 → ngrok-free.app'],['Protocol','HTTPS (port 443 — only outbound port allowed)'],['Config','~/.config/ngrok/ngrok.yml  (chmod 600)']] },
+      { h: 'Notes', li: [{t:'Static ngrok-free.app domain — set in ngrok.yml',c:'pl-b'},{t:'Enabled + auto-starts on boot',c:'pl-g'}] },
+    ]
+  },
+  webhook: {
+    ico: '🪝', name: 'webhook.service', type: 'Service — auto-deploy',
+    s: [
+      { h: 'Runtime', kv: [['Service','webhook.service (systemd, auto-start)'],['Script','/opt/webhook/index.js  (Node.js)'],['Port','localhost:3000'],['Auth','HMAC-SHA256 signature'],['Timeout','5s execSync limit']] },
+      { h: 'On trigger', li: [{t:'Receives GitHub push event via ngrok tunnel',c:'pl-b'},{t:'Verifies HMAC-SHA256 signature',c:'pl-g'},{t:'Runs: git -C /opt/agent60 pull',c:'pl-g'},{t:'Per-IP 5s rate limit — returns 429 on repeat hits',c:'pl-y'}] },
+      { h: 'Logs', kv: [['Live','journalctl -fu webhook'],['Filtered','journalctl -u webhook | grep -E "Pull|Rejected|Webhook"']] },
+    ]
+  },
+};
+
+// ── Detail panel logic ───────────────────────────────────────
+const panel     = document.getElementById('detail-panel');
+const pIco      = document.getElementById('p-ico');
+const pName     = document.getElementById('p-name');
+const pType     = document.getElementById('p-type');
+const pBody     = document.getElementById('p-body');
+let   activeNode = null;
+
+function openPanel(id) {
+  const d = ND[id];
+  if (!d) return;
+  if (activeNode) activeNode.classList.remove('selected');
+  if (activeChip) { activeChip.classList.remove('ss-selected'); activeChip = null; }
+  activeNode = document.getElementById('n-' + id);
+  if (activeNode) activeNode.classList.add('selected');
+
+  pIco.textContent  = d.ico;
+  pName.textContent = d.name;
+  pType.textContent = d.type;
+
+  const detailHtml = d.s.map(sec => {
+    let html = `<div class="panel-section"><h3>${sec.h}</h3>`;
+    if (sec.kv) {
+      html += '<div class="kv-grid">';
+      sec.kv.forEach(([k, v]) => { html += `<span class="kv-k">${k}</span><span class="kv-v">${v}</span>`; });
+      html += '</div>';
+    }
+    if (sec.li) {
+      html += '<ul class="panel-list">';
+      sec.li.forEach(item => { html += `<li class="${item.c}">${item.t}</li>`; });
+      html += '</ul>';
+    }
+    return html + '</div>';
+  }).join('');
+
+  pBody.innerHTML = detailHtml + buildConnSection(id);
+
+  panel.classList.add('open');
+  highlightConns('n-' + id);
+}
+
+function closePanel() {
+  panel.classList.remove('open');
+  if (activeNode) { activeNode.classList.remove('selected'); activeNode = null; }
+  if (activeChip) { activeChip.classList.remove('ss-selected'); activeChip = null; }
+  resetConns();
+}
+
+document.getElementById('panel-close').addEventListener('click', closePanel);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+
+document.querySelectorAll('.node[data-node]').forEach(node => {
+  node.addEventListener('click', () => {
+    const id = node.dataset.node;
+    if (panel.classList.contains('open') && activeNode === node) closePanel();
+    else openPanel(id);
+  });
+});
+
+// ── VLAN chip selection ──────────────────────────────────────
+let activeChip = null;
+
+document.querySelectorAll('.ss-chip[data-vlan]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const vlanId = chip.dataset.vlan;
+    if (panel.classList.contains('open') && activeChip === chip) {
+      closePanel();
+    } else {
+      openVlanPanel(chip, vlanId);
+    }
+  });
+});
+
+function openVlanPanel(chipEl, vlanId) {
+  const d = ND['vlan-' + vlanId];
+  if (!d) return;
+
+  // Clear any prior selection (node or chip)
+  if (activeNode) activeNode.classList.remove('selected');
+  activeNode = null;
+  if (activeChip) activeChip.classList.remove('ss-selected');
+  activeChip = chipEl;
+  chipEl.classList.add('ss-selected');
+
+  pIco.textContent  = d.ico;
+  pName.textContent = d.name;
+  pType.textContent = d.type;
+
+  const detailHtml = d.s.map(sec => {
+    let html = `<div class="panel-section"><h3>${sec.h}</h3>`;
+    if (sec.kv) {
+      html += '<div class="kv-grid">';
+      sec.kv.forEach(([k, v]) => { html += `<span class="kv-k">${k}</span><span class="kv-v">${v}</span>`; });
+      html += '</div>';
+    }
+    if (sec.li) {
+      html += '<ul class="panel-list">';
+      sec.li.forEach(item => { html += `<li class="${item.c}">${item.t}</li>`; });
+      html += '</ul>';
+    }
+    return html + '</div>';
+  }).join('');
+
+  pBody.innerHTML = detailHtml + buildVlanConnSection(vlanId);
+
+  panel.classList.add('open');
+  highlightVlan(vlanId);
+}
+
+function highlightVlan(vlanId) {
+  // Find every node whose NODE_VLAN includes this vlanId
+  const members = new Set();
+  for (const [nid, vlans] of Object.entries(NODE_VLAN)) {
+    if (vlans.includes(vlanId)) members.add(nid);
+  }
+
+  // Lines — dim all of them (a VLAN highlights its devices, not its plumbing)
+  document.querySelectorAll('#conn-svg path').forEach(path => {
+    path.classList.remove('cl-active');
+    path.classList.add('cl-dim');
+  });
+
+  // Nodes
+  document.querySelectorAll('.node[data-node]').forEach(node => {
+    node.classList.toggle('conn-lit', members.has('n-' + node.dataset.node));
+  });
+
+  // Chips — only the selected one stays lit
+  document.querySelectorAll('.ss-chip[data-vlan]').forEach(chip => {
+    chip.classList.toggle('ss-lit', chip.dataset.vlan === vlanId);
+  });
+
+  document.getElementById('topo-wrap').classList.add('has-selection');
+}
+
+// ── Connection definitions ────────────────────────────────────
+const CONNS = [
+  { a:'n-router',     b:'n-opnsense',  cls:'cl-phys', label:'Cat6 from wall → Mini PC nic0 (vmbr0) — physical WAN into OPNsense' },
+  { a:'n-opnsense',   b:'n-switch',    cls:'cl-phys', label:'Mini PC USB → USB-C NIC → Switch Port 2 (vmbr1) — native LAN 10.0.0.0/24 (untagged) + trunked VLAN tags 10/20/30/40' },
+  { a:'n-opnsense',   b:'n-adguard',   cls:'cl-net',  bSide:'horizontal', label:'Default gateway 10.0.10.1 for AdGuard (10.0.10.XX) · mgmt VLAN DHCP + firewall' },
+  { a:'n-opnsense',   b:'n-unifi-os',  cls:'cl-net',  bSide:'horizontal', label:'Default gateway 10.0.10.1 for Unifi OS Server (10.0.10.XX) · mgmt VLAN DHCP + firewall' },
+  { a:'n-opnsense',   b:'n-homarr',    cls:'cl-net',  bSide:'horizontal', label:'Default gateway 10.0.10.1 for Homarr (10.0.10.XX) · mgmt VLAN DHCP + firewall' },
+  { a:'n-opnsense',   b:'n-homelab-site', cls:'cl-net',  bSide:'top', label:'Default gateway 10.0.20.1 for homelab-site (10.0.20.XX) · services VLAN DHCP + firewall (tailscale-only inbound)' },
+  { a:'n-opnsense',   b:'n-reports',   cls:'cl-net',  bSide:'top', label:'Default gateway 10.0.30.1 for agent60 VM (10.0.30.XX) · automation VLAN DHCP + firewall (internet-only)' },
+  { a:'n-adguard',    b:'n-opnsense',  cls:'cl-dns',  label:'DNS for every LXC, VM, and tailnet client (10.0.10.XX) + .homelab URL rewrites — advertised via OPNsense DHCP & Tailscale plugin' },
+  { a:'n-unifi-os',   b:'n-switch',    cls:'cl-mgmt', label:'Configures switch — sets VLAN tags 10/20/30/40 + Port 2 as trunk (allow all VLANs)' },
+  { a:'n-opnsense',   b:'n-tailscale', cls:'cl-mgmt', bSide:'horizontal', label:'Tailscale plugin — OPNsense as exit node, advertises ALL VLAN subnets (LAN + 10/20/30/40) — full homelab reach' },
+  { a:'n-tailscale',  b:'n-adguard',   cls:'cl-mgmt', aSide:'left', bSide:'left', corridor:'left', label:'Reachable via Tailscale — OPNsense subnet route to mgmt VLAN 10.0.10.0/24' },
+  { a:'n-tailscale',  b:'n-unifi-os',  cls:'cl-mgmt', aSide:'left', bSide:'left', corridor:'left', label:'Reachable via Tailscale — OPNsense subnet route to mgmt VLAN 10.0.10.0/24' },
+  { a:'n-tailscale',  b:'n-homarr',    cls:'cl-mgmt', aSide:'left', bSide:'left', corridor:'left', label:'Reachable via Tailscale — only way in from outside the mgmt VLAN (LAN→mgmt firewalled)' },
+  { a:'n-tailscale',  b:'n-homelab-site', cls:'cl-mgmt', aSide:'left', bSide:'left', corridor:'left', label:'Tailscale-only inbound — OPNsense subnet route to services VLAN 10.0.20.0/24 (LAN→services firewalled, so this is the only way in)' },
+  { a:'n-tailscale',  b:'n-reports',   cls:'cl-mgmt', aSide:'bottom', bSide:'left', corridor:'left-bottom', label:'Reachable via Tailscale — OPNsense subnet route to automation VLAN 10.0.30.0/24 (agent60 VM)' },
+  { a:'n-reports',    b:'n-claude-cli',cls:'cl-data',  label:'Script triggers Claude CLI to build report content' },
+  { a:'n-claude-cli', b:'n-msmtp',     cls:'cl-data',  label:'Passes filled HTML email template to SMTP client' },
+  { a:'n-claude-cli', b:'n-anthropic', cls:'cl-data',  aSide:'right', bSide:'bottom', corridor:'right', label:'HTTPS :443 — Claude API, Notion MCP, Google Calendar MCP', arr:'arr-teal' },
+  { a:'n-claude-cli', b:'n-openmeteo', cls:'cl-data',  aSide:'right', bSide:'bottom', corridor:'right', label:'HTTPS :443 — weather forecast via WebFetch', arr:'arr-teal' },
+  { a:'n-msmtp',      b:'n-zoho',      cls:'cl-data',  aSide:'right', bSide:'bottom', corridor:'right', label:'SMTP :465 (implicit TLS) — delivers HTML email', arr:'arr-teal' },
+  { a:'n-github',     b:'n-ngrok',     cls:'cl-dep',   label:'Push webhook — triggers auto-deploy on every push to main', arr:'arr-yellow' },
+  { a:'n-ngrok',      b:'n-webhook',   cls:'cl-dep',   label:'HTTPS tunnel forwards webhook payload to localhost:3000' },
+  { a:'n-webhook',    b:'n-reports',   cls:'cl-dep',   label:'HMAC-verified — runs git pull /opt/agent60', arr:'arr-yellow' },
+  { a:'n-homelab-site', b:'n-github',  cls:'cl-dep',   aSide:'top', bSide:'bottom', label:'Manual git pull — read-only deploy key over SSH-on-443 (services VLAN only allows :443 outbound); private repo, pull-only scope', arr:'arr-yellow' },
+];
+
+// ── SVG helpers ───────────────────────────────────────────────
+function getRect(el, wrap) {
+  const er = el.getBoundingClientRect();
+  const wr = wrap.getBoundingClientRect();
+  return {
+    x:  er.left - wr.left,
+    y:  er.top  - wr.top,
+    w:  er.width,
+    h:  er.height,
+    cx: er.left - wr.left + er.width  / 2,
+    cy: er.top  - wr.top  + er.height / 2,
+  };
+}
+
+// Which side of a rect should we exit toward (tx, ty)?
+function pickSide(rect, tx, ty) {
+  const dx = tx - rect.cx;
+  const dy = ty - rect.cy;
+  if (dx === 0 && dy === 0) return 'bottom';
+  const slope = Math.abs(dy / (dx === 0 ? 0.0001 : dx));
+  const edgeSlope = rect.h / rect.w;
+  if (slope <= edgeSlope) return dx > 0 ? 'right' : 'left';
+  return dy > 0 ? 'bottom' : 'top';
+}
+
+// Honor a per-connection side hint. Accepts literal sides ('top'/'bottom'/'left'/'right'),
+// or 'horizontal'/'vertical' for "auto-pick the closer side along that axis".
+function resolveSide(hint, atRect, otherRect) {
+  if (!hint) return pickSide(atRect, otherRect.cx, otherRect.cy);
+  if (hint === 'horizontal') return (otherRect.cx > atRect.cx) ? 'right' : 'left';
+  if (hint === 'vertical')   return (otherRect.cy > atRect.cy) ? 'bottom' : 'top';
+  if (hint === 'top' || hint === 'bottom' || hint === 'left' || hint === 'right') return hint;
+  return pickSide(atRect, otherRect.cx, otherRect.cy);
+}
+
+// Point on a side at parameter t ∈ [0..1], with corner inset
+function pointOnSide(rect, side, t) {
+  // Wider spread on top/bottom (long lines often exit those) so fan-outs separate cleanly
+  const inset = (side === 'top' || side === 'bottom') ? 0.12 : 0.2;
+  const u = inset + t * (1 - 2 * inset);
+  switch (side) {
+    case 'top':    return { x: rect.x + u * rect.w, y: rect.y,             dir: 'top' };
+    case 'bottom': return { x: rect.x + u * rect.w, y: rect.y + rect.h,    dir: 'bottom' };
+    case 'left':   return { x: rect.x,              y: rect.y + u * rect.h, dir: 'left' };
+    case 'right':  return { x: rect.x + rect.w,     y: rect.y + u * rect.h, dir: 'right' };
+  }
+}
+
+// Smooth bezier — control points extend along each edge's normal.
+// Used for cl-mgmt (long-distance VPN/management lines) so they curve gracefully
+// instead of stacking into right-angle Z-shapes through the same vertical channel.
+function bzEdge(p1, p2) {
+  const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+  const t = Math.min(dist * 0.42, 130);
+  const off = dir => ({ top:[0,-t], bottom:[0,t], left:[-t,0], right:[t,0] }[dir] || [0,t]);
+  const [ox1, oy1] = off(p1.dir);
+  const [ox2, oy2] = off(p2.dir);
+  return `M ${p1.x} ${p1.y} C ${p1.x+ox1} ${p1.y+oy1}, ${p2.x+ox2} ${p2.y+oy2}, ${p2.x} ${p2.y}`;
+}
+
+// Corridor routing: U-shape through a fixed outer X (e.g. far left or far right
+// of the page). Lines from many sources fan into the corridor at distinct lanes
+// instead of crossing the diagram middle.
+function corridorPath(p1, p2, corridorX) {
+  const vDir = d => ({ top:[0,-1], bottom:[0,1], left:[-1,0], right:[1,0] }[d] || [0,1]);
+  const stub = 14;
+  const [vx1, vy1] = vDir(p1.dir);
+  const [vx2, vy2] = vDir(p2.dir);
+  const s1x = p1.x + vx1*stub, s1y = p1.y + vy1*stub;
+  const s2x = p2.x + vx2*stub, s2y = p2.y + vy2*stub;
+
+  // p1 → stub → corridor (at p1.y) → corridor (at p2.y) → stub at target → p2
+  const points = [
+    [p1.x, p1.y],
+    [s1x, s1y],
+    [corridorX, s1y],
+    [corridorX, s2y],
+    [s2x, s2y],
+    [p2.x, p2.y],
+  ];
+  return roundedPolyline(points, 6);
+}
+
+// Perimeter routing: out left, down past everything, across the bottom, then up to target.
+// Used when source and target are far apart on the X axis (otherwise the U-corridor
+// would still have to cut across the middle of the diagram).
+function perimeterPath(p1, p2, leftX, bottomY) {
+  const vDir = d => ({ top:[0,-1], bottom:[0,1], left:[-1,0], right:[1,0] }[d] || [0,1]);
+  const stub = 14;
+  const [vx1, vy1] = vDir(p1.dir);
+  const [vx2, vy2] = vDir(p2.dir);
+  const s1x = p1.x + vx1*stub, s1y = p1.y + vy1*stub;
+  const s2x = p2.x + vx2*stub, s2y = p2.y + vy2*stub;
+
+  // p1 → stub → leftX (down to bottomY) → across bottom to s2x → up to target stub → p2
+  const points = [
+    [p1.x, p1.y],
+    [s1x, s1y],
+    [leftX, s1y],
+    [leftX, bottomY],
+    [s2x, bottomY],
+    [s2x, s2y],
+    [p2.x, p2.y],
+  ];
+  return roundedPolyline(points, 6);
+}
+
+// Orthogonal (right-angle) path with rounded corners between two edge points
+function orthPath(p1, p2) {
+  const stub = 14;
+  const vDir = d => ({ top:[0,-1], bottom:[0,1], left:[-1,0], right:[1,0] }[d] || [0,1]);
+  const [vx1, vy1] = vDir(p1.dir);
+  const [vx2, vy2] = vDir(p2.dir);
+  const s1x = p1.x + vx1 * stub, s1y = p1.y + vy1 * stub;
+  const s2x = p2.x + vx2 * stub, s2y = p2.y + vy2 * stub;
+  const v1 = (p1.dir === 'top' || p1.dir === 'bottom');
+  const v2 = (p2.dir === 'top' || p2.dir === 'bottom');
+
+  const corners = [];
+  corners.push([p1.x, p1.y]);
+  corners.push([s1x, s1y]);
+
+  if (v1 && v2) {
+    const midY = (s1y + s2y) / 2;
+    corners.push([s1x, midY]);
+    corners.push([s2x, midY]);
+  } else if (!v1 && !v2) {
+    const midX = (s1x + s2x) / 2;
+    corners.push([midX, s1y]);
+    corners.push([midX, s2y]);
+  } else if (v1) {                          // p1 vertical → p2 horizontal
+    // Drop fully at source column, then turn at target's row (trunk + branch).
+    // Avoids stacking vertical descents at the target column when several lines
+    // share a target column.
+    corners.push([s1x, s2y]);
+  } else {                                  // p1 horizontal → p2 vertical
+    // Reach up/down at target's column, after a brief horizontal stub.
+    corners.push([s2x, s1y]);
+  }
+
+  corners.push([s2x, s2y]);
+  corners.push([p2.x, p2.y]);
+
+  return roundedPolyline(corners, 6);
+}
+
+// Build an SVG path string that connects waypoints with right angles + soft corner radii
+function roundedPolyline(pts, radius) {
+  // de-dup consecutive identical points
+  const uniq = pts.filter((p, i) => i === 0 || p[0] !== pts[i-1][0] || p[1] !== pts[i-1][1]);
+  if (uniq.length < 2) return '';
+  if (uniq.length === 2) {
+    return `M ${uniq[0][0]} ${uniq[0][1]} L ${uniq[1][0]} ${uniq[1][1]}`;
+  }
+  let d = `M ${uniq[0][0]} ${uniq[0][1]}`;
+  for (let i = 1; i < uniq.length - 1; i++) {
+    const [px, py] = uniq[i - 1];
+    const [cx, cy] = uniq[i];
+    const [nx, ny] = uniq[i + 1];
+    const len1 = Math.hypot(cx - px, cy - py);
+    const len2 = Math.hypot(nx - cx, ny - cy);
+    const r = Math.min(radius, len1 * 0.5, len2 * 0.5);
+    if (r < 1.5 || len1 === 0 || len2 === 0) {
+      d += ` L ${cx} ${cy}`;
+      continue;
+    }
+    const ux1 = (cx - px) / len1, uy1 = (cy - py) / len1;
+    const ux2 = (nx - cx) / len2, uy2 = (ny - cy) / len2;
+    const bx = cx - ux1 * r, by = cy - uy1 * r;
+    const ax = cx + ux2 * r, ay = cy + uy2 * r;
+    d += ` L ${bx} ${by} Q ${cx} ${cy} ${ax} ${ay}`;
+  }
+  const last = uniq[uniq.length - 1];
+  d += ` L ${last[0]} ${last[1]}`;
+  return d;
+}
+
+// ── Draw connections (orthogonal + modest edge distribution) ──
+function drawConns() {
+  const svg  = document.getElementById('conn-svg');
+  const wrap = document.getElementById('topo-wrap');
+  if (!svg || !wrap) return;
+  const w = Math.max(wrap.scrollWidth,  wrap.clientWidth);
+  const h = Math.max(wrap.scrollHeight, wrap.clientHeight);
+  svg.setAttribute('width',  w);
+  svg.setAttribute('height', h);
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.style.width  = w + 'px';
+  svg.style.height = h + 'px';
+  [...svg.querySelectorAll('path')].forEach(p => p.remove());
+
+  // Phase 1: gather rects for every node we need
+  const rects = {};
+  CONNS.forEach(({ a, b }) => {
+    [a, b].forEach(id => {
+      if (!rects[id]) {
+        const el = document.getElementById(id);
+        if (el) rects[id] = getRect(el, wrap);
+      }
+    });
+  });
+
+  // Phase 2: pick a side at each end of each connection, bucket by (node, side)
+  const buckets = {};
+  const processed = CONNS.map((conn, ci) => {
+    const ra = rects[conn.a], rb = rects[conn.b];
+    if (!ra || !rb) return null;
+    const aSide = resolveSide(conn.aSide, ra, rb);
+    const bSide = resolveSide(conn.bSide, rb, ra);
+    const itm = { conn, ci, aSide, bSide };
+    if (!buckets[conn.a])        buckets[conn.a] = {};
+    if (!buckets[conn.a][aSide]) buckets[conn.a][aSide] = [];
+    buckets[conn.a][aSide].push({ itm, end: 'a', target: { cx: rb.cx, cy: rb.cy } });
+    if (!buckets[conn.b])        buckets[conn.b] = {};
+    if (!buckets[conn.b][bSide]) buckets[conn.b][bSide] = [];
+    buckets[conn.b][bSide].push({ itm, end: 'b', target: { cx: ra.cx, cy: ra.cy } });
+    return itm;
+  });
+
+  // Phase 3: distribute exit positions within the middle 50% of each side
+  // sorted by target perpendicular coord so lines fan out without crossing at the source
+  const slice = {};
+  for (const nid in buckets) {
+    for (const side in buckets[nid]) {
+      const list = buckets[nid][side];
+      const horiz = (side === 'top' || side === 'bottom');
+      list.sort((p, q) => horiz ? p.target.cx - q.target.cx : p.target.cy - q.target.cy);
+      const n = list.length;
+      list.forEach((entry, idx) => {
+        const t = n === 1 ? 0.5 : idx / (n - 1);
+        const ci = entry.itm.ci;
+        if (!slice[ci]) slice[ci] = {};
+        slice[ci][entry.end] = t;
+      });
+    }
+  }
+
+  // Phase 3b: assign corridor lanes for connections that requested left/right/perimeter routing.
+  // Each line gets its own X column in the outer corridor, sorted by source y so adjacent lines
+  // stay parallel. Lane base sits in the empty space outside the actual diagram content.
+  const LANE_SPACING = 12;
+  const corridorLane = {};
+  // Find the actual diagram content's bounds so corridor lanes sit OUTSIDE all nodes.
+  let contentMinX = w, contentMaxX = 0, contentMaxY = 0;
+  for (const id in rects) {
+    contentMinX = Math.min(contentMinX, rects[id].x);
+    contentMaxX = Math.max(contentMaxX, rects[id].x + rects[id].w);
+    contentMaxY = Math.max(contentMaxY, rects[id].y + rects[id].h);
+  }
+  // Corridor anchors: 22px outside the leftmost/rightmost/bottommost node, clamped inside the wrapper.
+  const leftAnchor   = Math.max(15, contentMinX - 22);
+  const rightAnchor  = Math.min(w - 15, contentMaxX + 22);
+  const bottomAnchor = Math.min(h - 15, contentMaxY + 28);
+
+  const leftCorridorItems  = processed.filter(itm => itm && itm.conn.corridor === 'left')
+                                      .sort((a,b) => rects[a.conn.a].cy - rects[b.conn.a].cy);
+  const rightCorridorItems = processed.filter(itm => itm && itm.conn.corridor === 'right')
+                                      .sort((a,b) => rects[a.conn.a].cy - rects[b.conn.a].cy);
+  const perimeterItems     = processed.filter(itm => itm && itm.conn.corridor === 'left-bottom')
+                                      .sort((a,b) => rects[a.conn.a].cy - rects[b.conn.a].cy);
+
+  leftCorridorItems.forEach((itm, i) => {
+    // Innermost lane sits at the anchor; subsequent lanes step OUTward (toward the wrap edge).
+    corridorLane[itm.ci] = Math.max(8, leftAnchor - i * LANE_SPACING);
+  });
+  rightCorridorItems.forEach((itm, i) => {
+    corridorLane[itm.ci] = Math.min(w - 8, rightAnchor + i * LANE_SPACING);
+  });
+  // Perimeter lines share the leftmost lane band — pushed further out so they don't
+  // collide with the plain left-corridor lines.
+  perimeterItems.forEach((itm, i) => {
+    corridorLane[itm.ci] = Math.max(8, leftAnchor - (leftCorridorItems.length + i + 1) * LANE_SPACING);
+  });
+
+  // Phase 4: draw each path — corridor / perimeter routing if hinted, otherwise orthogonal
+  processed.forEach(itm => {
+    if (!itm) return;
+    const { conn, ci, aSide, bSide } = itm;
+    const s = slice[ci] || {};
+    const p1 = pointOnSide(rects[conn.a], aSide, s.a ?? 0.5);
+    const p2 = pointOnSide(rects[conn.b], bSide, s.b ?? 0.5);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    let d;
+    if (conn.corridor === 'left-bottom') {
+      d = perimeterPath(p1, p2, corridorLane[ci], bottomAnchor);
+    } else if (corridorLane[ci] !== undefined) {
+      d = corridorPath(p1, p2, corridorLane[ci]);
+    } else {
+      d = orthPath(p1, p2);
+    }
+    path.setAttribute('d', d);
+    path.setAttribute('class', 'cl ' + conn.cls);
+    path.setAttribute('data-i', ci);
+    path.setAttribute('data-a', conn.a);
+    path.setAttribute('data-b', conn.b);
+    if (conn.arr) path.setAttribute('marker-end', `url(#${conn.arr})`);
+    svg.appendChild(path);
+  });
+
+  // Re-apply highlight if a node is currently selected
+  if (activeNode) highlightConns('n-' + activeNode.dataset.node);
+}
+
+// ── Connection highlighting ───────────────────────────────────
+function highlightConns(nodeId) {
+  // Clicking a node is a single-selection intent — exit show-all mode if on.
+  clearShowAll();
+  // Collect all node IDs directly connected to this one
+  const lit = new Set([nodeId]);
+  CONNS.forEach(c => {
+    if (c.a === nodeId) lit.add(c.b);
+    if (c.b === nodeId) lit.add(c.a);
+  });
+
+  // Lines
+  document.querySelectorAll('#conn-svg path').forEach(path => {
+    const connected = path.getAttribute('data-a') === nodeId || path.getAttribute('data-b') === nodeId;
+    path.classList.toggle('cl-active', connected);
+    path.classList.toggle('cl-dim',    !connected);
+  });
+
+  // Nodes — mark connected ones so they stay bright
+  document.querySelectorAll('.node[data-node]').forEach(node => {
+    node.classList.toggle('conn-lit', lit.has('n-' + node.dataset.node));
+  });
+
+  // Light up the VLAN chips this node lives on (via NODE_VLAN); explicitly clear
+  // all others so a previously-selected chip's `ss-lit` doesn't bleed into a
+  // subsequent node click.
+  const myVlans = new Set(NODE_VLAN[nodeId] || []);
+  document.querySelectorAll('.ss-chip[data-vlan]').forEach(chip => {
+    chip.classList.toggle('ss-lit', myVlans.has(chip.dataset.vlan));
+  });
+
+  document.getElementById('topo-wrap').classList.add('has-selection');
+}
+
+function resetConns() {
+  document.querySelectorAll('#conn-svg path').forEach(p => p.classList.remove('cl-active', 'cl-dim'));
+  document.querySelectorAll('.node').forEach(n => n.classList.remove('conn-lit'));
+  document.querySelectorAll('.ss-chip').forEach(c => c.classList.remove('ss-lit'));
+  document.getElementById('topo-wrap')?.classList.remove('has-selection');
+  clearShowAll();
+}
+
+// ── "Show all connections" toggle ─────────────────────────────
+// Reuses the same CSS state classes the per-node highlighter uses, but applies
+// them to every node / connector / chip simultaneously. Because every element
+// ends up "lit," the dim CSS rules (which only target unlit elements) have
+// nothing left to dim — so visually everything glows.
+function showAllConns() {
+  document.querySelectorAll('#conn-svg path').forEach(p => {
+    p.classList.add('cl-active');
+    p.classList.remove('cl-dim');
+  });
+  document.querySelectorAll('.node[data-node]').forEach(n => n.classList.add('conn-lit'));
+  document.querySelectorAll('.ss-chip[data-vlan]').forEach(c => c.classList.add('ss-lit'));
+  document.getElementById('topo-wrap')?.classList.add('has-selection');
+  const btn = document.getElementById('show-all-conns');
+  if (btn) { btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true'); btn.textContent = 'Reset view'; }
+}
+
+function clearShowAll() {
+  const btn = document.getElementById('show-all-conns');
+  if (btn) { btn.classList.remove('active'); btn.setAttribute('aria-pressed', 'false'); btn.textContent = 'Show all connections'; }
+}
+
+document.getElementById('show-all-conns')?.addEventListener('click', () => {
+  const btn = document.getElementById('show-all-conns');
+  if (btn.classList.contains('active')) {
+    // Already showing everything — turn off and return to default view.
+    resetConns();
+  } else {
+    // Close any open per-node panel first so single-selection state doesn't
+    // bleed into the show-all view.
+    if (panel.classList.contains('open')) closePanel();
+    showAllConns();
+  }
+});
+
+// ── Build "Devices on this VLAN" section ──────────────────────
+const VLAN_ROLES = {
+  lan: {
+    'n-opnsense':  'Gateway 10.0.0.1 · DHCP · DNS forwarder → AdGuard',
+    'n-switch':    'Port 2 native (untagged) VLAN',
+    'n-tailscale': 'Advertises 10.0.0.0/24 to the tailnet',
+  },
+  v10: {
+    'n-opnsense':  'Gateway 10.0.10.1 · DHCP · firewall',
+    'n-switch':    'Trunks tag 10 on Port 2',
+    'n-tailscale': 'Advertises 10.0.10.0/24 to the tailnet',
+    'n-adguard':   'Resident · serves DNS + .homelab rewrites for every VLAN',
+    'n-unifi-os':  'Resident · configures the Flex Mini switch',
+    'n-homarr':    'Resident · homelab dashboard (Tailscale-only from outside LAN)',
+  },
+  v20: {
+    'n-opnsense':  'Gateway 10.0.20.1 · DHCP (firewall rules pending)',
+    'n-switch':    'Trunks tag 20 on Port 2',
+    'n-tailscale': 'Advertises 10.0.20.0/24 to the tailnet',
+  },
+  v30: {
+    'n-opnsense':   'Gateway 10.0.30.1 · DHCP · firewall (internet-only egress)',
+    'n-switch':     'Trunks tag 30 on Port 2',
+    'n-tailscale':  'Advertises 10.0.30.0/24 to the tailnet',
+    'n-reports':    'Resident in agent60 VM · cron-scheduled reports',
+    'n-claude-cli': 'Resident in agent60 VM · Claude headless CLI',
+    'n-msmtp':      'Resident in agent60 VM · SMTP client (SMTP provider)',
+    'n-ngrok':      'Resident in agent60 VM · auto-deploy tunnel',
+    'n-webhook':    'Resident in agent60 VM · git-pull listener',
+  },
+  v40: {
+    'n-opnsense':  'Gateway 10.0.40.1 · DHCP (firewall rules pending)',
+    'n-switch':    'Trunks tag 40 on Port 2',
+    'n-tailscale': 'Advertises 10.0.40.0/24 to the tailnet',
+  },
+};
+
+// Color a member by what kind of role they play on this VLAN
+function memberColor(nid) {
+  if (nid === 'n-opnsense')  return 'var(--red)';     // gateway / firewall
+  if (nid === 'n-switch')    return 'var(--purple)';  // trunk carrier
+  if (nid === 'n-tailscale') return 'var(--blue)';    // subnet advertiser
+  return 'var(--yellow)';                              // resident device
+}
+
+// Ordered so gateway/trunk/tailscale show first, then residents
+const MEMBER_ORDER = [
+  'n-opnsense','n-switch','n-tailscale',
+  'n-adguard','n-unifi-os','n-homarr',
+  'n-reports','n-claude-cli','n-msmtp','n-ngrok','n-webhook',
+];
+
+function buildVlanConnSection(vlanId) {
+  const roleMap = VLAN_ROLES[vlanId] || {};
+  const members = MEMBER_ORDER.filter(nid =>
+    (NODE_VLAN[nid] || []).includes(vlanId)
+  );
+  if (!members.length) return '';
+
+  const rows = members.map(nid => {
+    const node  = NODE_NAMES[nid] || { name: nid, ico: '?' };
+    const role  = roleMap[nid] || 'Member of this VLAN';
+    const color = memberColor(nid);
+    return `<div class="conn-item">
+      <div class="conn-dot" style="background:${color};box-shadow:0 0 5px ${color}"></div>
+      <div class="conn-info">
+        <span class="conn-name">${node.ico} ${node.name}</span>
+        <span class="conn-desc">${role}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="panel-section"><h3>Devices on this VLAN</h3><div class="conn-list">${rows}</div></div>`;
+}
+
+// ── Build connections panel section ───────────────────────────
+function buildConnSection(nodeId) {
+  const fullId = 'n-' + nodeId;
+  const relevant = CONNS.filter(c => c.a === fullId || c.b === fullId);
+  if (!relevant.length) return '';
+
+  const rows = relevant.map(c => {
+    const isSource = c.a === fullId;
+    const otherId  = isSource ? c.b : c.a;
+    const other    = NODE_NAMES[otherId] || { name: otherId, ico: '?' };
+    const meta     = CLS_META[c.cls]    || { color: 'var(--muted)', label: '' };
+    const arrow    = isSource ? '→' : '←';
+    return `<div class="conn-item">
+      <div class="conn-dot" style="background:${meta.color};box-shadow:0 0 5px ${meta.color}"></div>
+      <span class="conn-arrow" style="color:${meta.color}">${arrow}</span>
+      <div class="conn-info">
+        <span class="conn-name">${other.ico} ${other.name}</span>
+        <span class="conn-desc">${c.label}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="panel-section"><h3>Connections</h3><div class="conn-list">${rows}</div></div>`;
+}
+
+window.addEventListener('load', () => setTimeout(drawConns, 120));
+new ResizeObserver(() => drawConns()).observe(document.getElementById('topo-wrap') || document.body);
+</script>
+</body>
+</html>
