@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>homelab • diessect</title>
 <!-- Favicon — sombra.png (PNG that modern browsers display) + sombra.ico (legacy fallback for browsers' auto /favicon.ico request). Both files live in this same diessect/ folder, served by nginx alongside the HTML. -->
 <link rel="icon" type="image/png" href="sombra.png">
@@ -34,18 +34,26 @@
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+html { scroll-behavior: smooth; }
+
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
   min-height: 100vh;
+  min-height: 100dvh;
   line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
 }
 
 /* ── HEADER ───────────────────────────────────────────────── */
 header {
   border-bottom: 1px solid #4a4a4a;  /* brighter than var(--border) — clearer divider above the tab strip */
   padding: 14px 24px;
+  padding-top: max(14px, env(safe-area-inset-top));
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
   display: flex;
   align-items: center;
   gap: 14px;
@@ -95,19 +103,24 @@ nav {
   display: flex;
   gap: 0;
   overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+nav::-webkit-scrollbar { display: none; }
 .tab-btn {
   background: none; border: none;
   color: #c0c0c0;  /* brighter than var(--muted) — readable inactive state */
   cursor: pointer;
   font-size: 13px; font-family: var(--font); font-weight: 500;
   padding: 11px 16px;
+  min-height: 44px;
   border-bottom: 2px solid transparent;
   white-space: nowrap;
   transition: color .15s, border-color .15s;
   display: flex; align-items: center; gap: 6px;
 }
 .tab-btn:hover { color: var(--text); }
+.tab-btn:active { color: var(--text); }
 .tab-btn.active { color: var(--text); border-bottom-color: var(--purple); }  /* active underline in purple to match the homelab_ branding */
 
 /* ── MAIN LAYOUT ──────────────────────────────────────────── */
@@ -190,13 +203,17 @@ main { padding: 24px; max-width: 1440px; margin: 0 auto; }
   gap: 3px; padding: 8px 10px;
   background: var(--bg2); border: 1px solid var(--border);
   border-radius: 6px; cursor: pointer;
-  transition: all .15s; min-width: 84px; text-align: center;
+  transition: all .15s; min-width: 84px; min-height: 44px; text-align: center;
   position: relative; user-select: none;
 }
 .node:hover {
   border-color: var(--blue); background: var(--bg3);
   transform: translateY(-1px);
   box-shadow: 0 4px 14px rgba(88,166,255,.12);
+}
+.node:active {
+  background: var(--bg3);
+  transform: translateY(-1px);
 }
 .node.selected {
   border-color: var(--blue);
@@ -227,7 +244,7 @@ main { padding: 24px; max-width: 1440px; margin: 0 auto; }
 /* ── DETAIL PANEL ─────────────────────────────────────────── */
 #detail-panel {
   position: fixed; right: -380px; top: 0;
-  width: 360px; height: 100vh;
+  width: 360px; height: 100vh; height: 100dvh;
   background: var(--bg2); border-left: 1px solid var(--border);
   z-index: 500; overflow-y: auto;
   transition: right .25s cubic-bezier(.4,0,.2,1);
@@ -247,11 +264,19 @@ main { padding: 24px; max-width: 1440px; margin: 0 auto; }
 .panel-close {
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 16px; padding: 4px 6px; border-radius: 4px;
+  min-width: 44px; min-height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
   transition: color .15s, background .15s;
 }
 .panel-close:hover { color: var(--text); background: var(--bg3); }
+.panel-close:active { color: var(--text); background: var(--bg3); }
 
-.panel-body { padding: 18px; overflow-y: auto; flex: 1; }
+.panel-body {
+  padding: 18px;
+  padding-bottom: max(18px, calc(18px + env(safe-area-inset-bottom)));
+  overflow-y: auto; flex: 1;
+}
 .panel-section { margin-bottom: 18px; }
 .panel-section:last-child { margin-bottom: 0; }
 .panel-section h3 {
@@ -369,10 +394,12 @@ main { padding: 24px; max-width: 1440px; margin: 0 auto; }
   color: var(--text); cursor: pointer;
   font-size: 13px; font-family: var(--font); font-weight: 500;
   padding: 13px 14px;
+  min-height: 48px;
   display: flex; align-items: center; gap: 10px;
   text-align: left; transition: background .15s;
 }
 .acc-trigger:hover { background: var(--bg3); }
+.acc-trigger:active { background: var(--bg3); }
 .acc-trigger.open  { background: var(--bg3); }
 
 .sev { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
@@ -664,60 +691,99 @@ main { padding: 24px; max-width: 1440px; margin: 0 auto; }
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
     padding-bottom: 10px;
+    /* Fade right edge to signal more content */
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 36px), transparent 100%);
+    mask-image: linear-gradient(to right, black calc(100% - 36px), transparent 100%);
   }
   .topo-layout { min-width: 900px; }
   #conn-svg { min-width: 900px; }
 }
 
 @media (max-width: 768px) {
-  /* Header */
-  header { padding: 12px 14px; gap: 10px; }
+  /* Header — respect safe areas from earlier rule */
+  header { padding: 12px 14px; padding-top: max(12px, env(safe-area-inset-top)); gap: 10px; }
   .header-logo { width: 30px; height: 30px; font-size: 15px; }
   header h1 { font-size: 15px; }
   header p { font-size: 11px; }
   .header-status { display: none; }
 
-  /* Nav: tighter, scrollable */
-  nav { padding: 0 12px; }
-  .tab-btn { font-size: 12px; padding: 10px 11px; gap: 4px; }
+  /* Nav: tighter, scrollable, safe-area aware */
+  nav { padding: 0 max(12px, env(safe-area-inset-left)); }
+  .tab-btn { font-size: 12px; padding: 10px 12px; gap: 5px; min-height: 44px; }
 
-  /* Main padding */
-  main { padding: 14px 12px; }
+  /* Main padding — safe area on sides */
+  main {
+    padding: 14px max(12px, env(safe-area-inset-right)) 14px max(12px, env(safe-area-inset-left));
+  }
 
   /* Detail panel fills the screen */
   #detail-panel { width: 100%; right: -100%; }
   #detail-panel.open { right: 0; }
-  .panel-head { padding: 14px; }
-  .panel-body { padding: 14px; }
+  .panel-head { padding: 14px; padding-top: max(14px, env(safe-area-inset-top)); }
+  .panel-body {
+    padding: 14px;
+    padding-bottom: max(14px, calc(14px + env(safe-area-inset-bottom)));
+  }
 
-  /* Subnet strip: smaller chips */
-  .subnet-strip { padding: 6px 8px; gap: 4px; }
-  .ss-chip { font-size: 9px; padding: 2px 6px; }
+  /* Subnet strip: chips slightly smaller but still 11px min */
+  .subnet-strip { padding: 6px 8px; gap: 5px; }
+  .ss-chip { font-size: 11px; padding: 4px 8px; min-height: 32px; display: inline-flex; align-items: center; }
+  .ss-chip:active { transform: translateY(-1px); filter: brightness(1.15); }
 
   /* Legend wraps cleanly */
   .topo-legend { padding: 8px 10px; gap: 10px; }
-  .legend-item { font-size: 10px; }
+  .legend-item { font-size: 11px; }
+  .legend-toggle { padding: 6px 12px; min-height: 36px; }
 
-  /* VLANs tab: single column, smaller padding */
+  /* VLANs tab: single column, smaller padding, scrollable tables */
   .vlan-grid { grid-template-columns: 1fr; gap: 12px; }
   .vlan-card-head { padding: 10px 12px; }
-  .vlan-body { padding: 10px 12px; }
+  .vlan-body { padding: 10px 12px; overflow-x: auto; }
+  .fw-table th, .fw-table td { font-size: 11px; padding: 6px 8px; }
 
-  /* agent60 tab: single column + tighter pipeline */
+  /* agent60 tab: single column */
   .report-cards { grid-template-columns: 1fr; }
-  .pipeline { padding: 14px; gap: 6px; }
-  .p-step { min-width: 90px; padding: 8px 10px; }
-  .p-name { font-size: 10px; }
-  .p-detail { font-size: 9px; }
-  .p-arrow { font-size: 14px; padding: 0 2px; }
 
-  /* Troubleshooting */
-  .acc-trigger { font-size: 12px; padding: 11px 12px; gap: 8px; }
+  /* Pipeline: vertical stack on mobile */
+  .pipeline {
+    flex-direction: column;
+    align-items: center;
+    overflow-x: unset;
+    padding: 14px;
+    gap: 0;
+  }
+  .p-step {
+    width: 100%; max-width: 280px; min-width: unset;
+    padding: 10px 14px; flex-direction: row; justify-content: flex-start;
+    gap: 10px; text-align: left;
+  }
+  .p-icon { font-size: 18px; flex-shrink: 0; }
+  .p-name { font-size: 12px; }
+  .p-detail { font-size: 11px; }
+  .p-arrow {
+    font-size: 18px; padding: 4px 0;
+    transform: rotate(90deg);
+    align-self: center;
+  }
+
+  /* Troubleshooting accordion */
+  .acc-trigger {
+    font-size: 12px; padding: 12px 12px 12px 12px; gap: 8px;
+    flex-wrap: wrap;
+    position: relative;
+    padding-right: 36px;
+  }
+  .acc-chevron {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    margin-left: 0;
+  }
+  .acc-trigger.open .acc-chevron { transform: translateY(-50%) rotate(180deg); }
   .acc-body { padding: 0 12px 12px; }
   .issue-box { padding: 12px; }
-  .status-pill { font-size: 9px; padding: 1px 6px; }
-  .code-block { font-size: 10px; padding: 8px 10px; }
+  .status-pill { font-size: 10px; padding: 2px 7px; }
+  .code-block { font-size: 11px; padding: 8px 10px; }
 
   /* Docs tab */
   .docs-hero { padding: 16px; gap: 14px; }
@@ -726,17 +792,29 @@ main { padding: 24px; max-width: 1440px; margin: 0 auto; }
   .docs-lead { font-size: 12px; }
   .docs-cards { grid-template-columns: 1fr; }
   #tab-docs .section-heading { margin-top: 26px; }
-  .docs-codelist { font-size: 10px; padding: 6px 8px; }
+  .docs-codelist { font-size: 11px; padding: 6px 8px; }
 }
 
 @media (max-width: 480px) {
   header h1 { font-size: 14px; }
   header p { display: none; }
-  .tab-btn { padding: 9px 9px; font-size: 11px; }
+  /* Tab buttons: icon + short label, generous tap area */
+  .tab-btn { padding: 10px 10px; font-size: 12px; gap: 4px; }
   .topo-layout { min-width: 760px; }
   #conn-svg { min-width: 760px; }
-  .fw-table th, .fw-table td { font-size: 10px; padding: 4px 5px; }
+  .fw-table th, .fw-table td { font-size: 11px; padding: 5px 6px; }
   .docs-table th, .docs-table td { font-size: 11px; padding: 7px 9px; }
+
+  /* Pipeline steps full-width on small phones */
+  .p-step { max-width: 100%; }
+
+  /* Keep section headings readable */
+  .section-heading { font-size: 14px; }
+  .trouble-heading { font-size: 13px; }
+
+  /* Docs hero: stack icon above text on very small screens */
+  .docs-hero { flex-direction: column; }
+  .docs-hero-ico { font-size: 28px; margin-top: 0; }
 }
 
 /* ── CONNECTION LIST (panel) ──────────────────────────────── */
@@ -1645,7 +1723,8 @@ tail -f /opt/agent60/logs/friday_report.log</code>
     </div>
     <div class="docs-card">
       <h4>📖 homelab-site (LXC, services VLAN)</h4>
-      <p>Static nginx serving this very page (<span class="ic">homelab_reorganization.html</span>) at <span class="ic">http://map.homelab</span> for personal viewing. Tailscale-only inbound (LAN → services blocked). Private GitHub repo cloned via SSH using a <strong>read-only deploy key</strong> tunneled over HTTPS:443 (services VLAN doesn't allow :22). Manual <span class="ic">git pull</span> to update. If the LXC is ever compromised, blast radius is read access to this one repo — nothing else.</p>
+      <p>Static nginx serving <span class="ic">/opt/homelab-site/</span> as the document root, with <span class="ic">homelab_reorganization.html</span> set as the directory index so the bare URL renders the page with no port and no path suffix. Reachable at <span class="ic">http://map.homelab</span> for personal viewing. Tailscale-only inbound (LAN → services blocked). Private GitHub repo cloned via SSH using a <strong>read-only deploy key</strong> tunneled over HTTPS:443 (services VLAN doesn't allow :22). Manual <span class="ic">git pull</span> to update. If the LXC is ever compromised, blast radius is read access to this one repo — nothing else.</p>
+      <p style="margin-top:6px;"><strong>Static assets in the document root:</strong> <span class="ic">favicon.png</span> (custom-drawn, what modern browsers display in the tab) plus <span class="ic">favicon.ico</span> (legacy fallback so the browser's auto <span class="ic">GET /favicon.ico</span> request doesn't 404 in the nginx access log).</p>
     </div>
     <div class="docs-card">
       <h4>🤖 agent60 VM (Ubuntu, automation VLAN)</h4>
